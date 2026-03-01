@@ -263,7 +263,9 @@ def _extract_score_from_text(text: str) -> float | None:
 def parse_judge_output(judging_dir: Path) -> tuple[float, dict]:
     """Parse judge output from a counselors output directory.
 
-    Reads ALL ``.md`` files recursively and tries multiple extraction strategies:
+    Reads agent output ``.md`` files recursively and tries multiple
+    extraction strategies.  Excludes known non-output files (prompts,
+    summaries) that may contain template/example JSON.
 
     1. JSON extraction from each file (via ``_extract_json_from_markdown``)
     2. Score extraction from natural language prose (via ``_extract_score_from_text``)
@@ -271,7 +273,11 @@ def parse_judge_output(judging_dir: Path) -> tuple[float, dict]:
 
     Returns ``(score, asi_dict)``.
     """
-    md_files = list(judging_dir.glob("**/*.md"))
+    _EXCLUDED_NAMES = {"prompt.md", "judge-prompt.md", "summary.md"}
+    md_files = [
+        f for f in judging_dir.glob("**/*.md")
+        if f.name not in _EXCLUDED_NAMES
+    ]
     if not md_files:
         logger.warning("No .md files found in %s", judging_dir)
         return 0.0, {"error": f"No output files found in {judging_dir}"}
