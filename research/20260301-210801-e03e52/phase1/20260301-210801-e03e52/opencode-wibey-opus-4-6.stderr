@@ -1,0 +1,81 @@
+
+> build · claude-opus-4-6
+
+→ Read research/20260301-210801-e03e52/phase1/20260301-210801-e03e52/prompt.md
+
+# Todos
+[ ] Research Harbor's architecture (GitHub repo, docs, README)
+[ ] Research inspect-harbor bridge between Inspect AI and Harbor
+[ ] Research how to define/register new agent solvers in Harbor
+[ ] Research how to define/register new benchmarks/datasets (Spider2, LongMemEval)
+[ ] Research eval execution pipeline and lifecycle management
+[ ] Research practical architecture for general-purpose eval runner
+[ ] Find existing examples and patterns from Harbor's built-in eval support
+[ ] Identify gaps, limitations, and custom engineering needs
+[ ] Write comprehensive research report
+
+# Todos
+[ ] Research Harbor's architecture (GitHub repo, docs, README)
+[ ] Research inspect-harbor bridge between Inspect AI and Harbor
+[ ] Research how to define/register new agent solvers in Harbor
+[ ] Research how to define/register new benchmarks/datasets (Spider2, LongMemEval)
+[ ] Research eval execution pipeline and lifecycle management
+[ ] Research practical architecture for general-purpose eval runner
+[ ] Find existing examples and patterns from Harbor's built-in eval support
+[ ] Identify gaps, limitations, and custom engineering needs
+[ ] Write comprehensive research report
+
+% WebFetch https://github.com/av/harbor
+⚙ deepwiki_read_wiki_structure {"repoName":"av/harbor"}
+✗ webfetch failed
+Error: Request failed with status code: 404
+⚙ deepwiki_read_wiki_contents {"repoName":"av/harbor"}
+% WebFetch https://github.com/av/harbor/wiki/5.1.-Harbor-Bench
+% WebFetch https://github.com/av/harbor/tree/main/routines
+⚙ deepwiki_ask_question {"repoName":"av/harbor","question":"How does Harbor handle evaluations and benchmarking? What is Harbor Bench? How does it work with eval frameworks like Inspect AI? What is the eval execution pipeline? How are solvers and benchmarks registered?"}
+
+# Todos
+[x] Research Harbor's architecture (GitHub repo, docs, README)
+[ ] Research inspect-harbor bridge between Inspect AI and Harbor
+[ ] Research how to define/register new agent solvers in Harbor
+[ ] Research how to define/register new benchmarks/datasets (Spider2, LongMemEval)
+[ ] Research eval execution pipeline and lifecycle management
+[ ] Research practical architecture for general-purpose eval runner
+[x] Find existing examples and patterns from Harbor's built-in eval support
+[ ] Identify gaps, limitations, and custom engineering needs
+[ ] Write comprehensive research report
+
+• Research Inspect AI framework General Agent
+• Research Spider2 and LongMemEval General Agent
+% WebFetch https://github.com/av/harbor/wiki/2.3.17-Satellite:-lm-evaluation-harness
+% WebFetch https://github.com/av/harbor/wiki/2.3.28-Satellite:-Promptfoo
+✓ Research Inspect AI framework General Agent
+✓ Research Spider2 and LongMemEval General Agent
+
+# Todos
+[x] Research Harbor's architecture (GitHub repo, docs, README)
+[x] Research inspect-harbor bridge between Inspect AI and Harbor
+[x] Research how to define/register new agent solvers in Harbor
+[x] Research how to define/register new benchmarks/datasets (Spider2, LongMemEval)
+[x] Research eval execution pipeline and lifecycle management
+[x] Research practical architecture for general-purpose eval runner
+[x] Find existing examples and patterns from Harbor's built-in eval support
+[x] Identify gaps, limitations, and custom engineering needs
+[ ] Write comprehensive research report
+
+→ Read research/20260301-210801-e03e52/phase1/20260301-210801-e03e52
+
+← Write research/20260301-210801-e03e52/phase1/20260301-210801-e03e52/report.md
+Wrote file successfully.
+
+# Todos
+[x] Research Harbor's architecture (GitHub repo, docs, README)
+[x] Research inspect-harbor bridge between Inspect AI and Harbor
+[x] Research how to define/register new agent solvers in Harbor
+[x] Research how to define/register new benchmarks/datasets (Spider2, LongMemEval)
+[x] Research eval execution pipeline and lifecycle management
+[x] Research practical architecture for general-purpose eval runner
+[x] Find existing examples and patterns from Harbor's built-in eval support
+[x] Identify gaps, limitations, and custom engineering needs
+[x] Write comprehensive research report
+

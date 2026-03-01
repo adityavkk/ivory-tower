@@ -1,0 +1,61 @@
+{
+  "run_id": "20260301-195646-b4a339",
+  "topic": "How can I use Harbor (https://github.com/av/harbor) and inspect-harbor (the Inspect AI integration/bridge for Harbor) to build a general-purpose eval runner that can run different agent solvers against different benchmarks like Spider2, LongMemEval, and others? Specifically research: (1) Harbor's architecture - how it orchestrates agent backends, services, and eval tasks; (2) inspect-harbor's role as the bridge between Inspect AI's eval framework and Harbor's service management; (3) how to define and register new agent solvers (e.g. wrapping a custom agent as a Harbor-compatible solver); (4) how to define and register new benchmarks/datasets (e.g. integrating Spider2 and LongMemEval task suites); (5) the eval execution pipeline - how Harbor manages the lifecycle of running a solver against a benchmark; (6) practical architecture for a general-purpose eval runner that can mix-and-match solvers and benchmarks; (7) existing examples and patterns from Harbor's built-in eval support; (8) gaps, limitations, and areas where custom engineering would be needed.",
+  "agents": [
+    "opencode",
+    "codex-5.3-xhigh"
+  ],
+  "synthesizer": "opencode",
+  "flags": {
+    "raw": false,
+    "instructions": null,
+    "verbose": true
+  },
+  "phases": {
+    "research": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "duration_seconds": null,
+      "agents": {
+        "opencode": {
+          "status": "pending",
+          "duration_seconds": null,
+          "output": "phase1/opencode-report.md"
+        },
+        "codex-5.3-xhigh": {
+          "status": "pending",
+          "duration_seconds": null,
+          "output": "phase1/codex-5.3-xhigh-report.md"
+        }
+      }
+    },
+    "cross_pollination": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "duration_seconds": null,
+      "sessions": {
+        "opencode-cross-codex-5.3-xhigh": {
+          "status": "pending",
+          "duration_seconds": null,
+          "output": "phase2/opencode-cross-codex-5.3-xhigh.md"
+        },
+        "codex-5.3-xhigh-cross-opencode": {
+          "status": "pending",
+          "duration_seconds": null,
+          "output": "phase2/codex-5.3-xhigh-cross-opencode.md"
+        }
+      }
+    },
+    "synthesis": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "duration_seconds": null,
+      "agent": "opencode",
+      "output": "phase3/final-report.md"
+    }
+  },
+  "total_duration_seconds": null
+}
