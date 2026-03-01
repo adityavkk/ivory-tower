@@ -915,38 +915,42 @@ class AdversarialStrategy:
                     list(reflective_dataset.keys()) if isinstance(reflective_dataset, dict) else type(reflective_dataset).__name__,
                     len(candidate.get("report", "")),
                 )
-                feedback = extract_feedback_from_reflective_dataset(
-                    reflective_dataset if isinstance(reflective_dataset, dict) else {}
+                # Primary path: read judge output directly from disk.
+                # GEPA's reflective_dataset is unreliable -- it may contain
+                # template/example values from the judging prompt rather than
+                # the evaluator's actual ASI dict.  Disk files are the
+                # ground truth written by parse_judge_output() in evaluator().
+                feedback: dict | None = None
+                judge_round_dirs = sorted(
+                    judging_dir.glob(f"round-*-{judge}-judges-{agent}"),
+                    key=lambda d: d.name,
+                    reverse=True,
                 )
+                if judge_round_dirs:
+                    disk_score, disk_asi = parse_judge_output(judge_round_dirs[0])
+                    if disk_score > 0.0 or disk_asi.get("critique"):
+                        feedback = {
+                            "score": disk_score,
+                            "dimensions": disk_asi.get("dimensions", {}),
+                            "strengths": disk_asi.get("strengths", []),
+                            "weaknesses": disk_asi.get("weaknesses", []),
+                            "suggestions": disk_asi.get("suggestions", []),
+                            "critique": disk_asi.get("critique", ""),
+                        }
+                        logger.info(
+                            "[%s] Read judge feedback from disk: score=%.1f (round dir: %s)",
+                            agent, disk_score, judge_round_dirs[0].name,
+                        )
 
-                # Fallback: if reflective_dataset didn't yield usable feedback,
-                # read the most recent judge output file directly from disk.
-                if feedback["score"] == 0.0 and not feedback.get("critique"):
+                # Fallback: try GEPA's reflective_dataset if disk read failed
+                if feedback is None:
                     logger.info(
-                        "[%s] reflective_dataset feedback empty, reading judge output from disk",
+                        "[%s] No judge output on disk, falling back to reflective_dataset",
                         agent,
                     )
-                    # Find the most recent judging round dir for this agent
-                    judge_round_dirs = sorted(
-                        judging_dir.glob(f"round-*-{judge}-judges-{agent}"),
-                        key=lambda d: d.name,
-                        reverse=True,
+                    feedback = extract_feedback_from_reflective_dataset(
+                        reflective_dataset if isinstance(reflective_dataset, dict) else {}
                     )
-                    if judge_round_dirs:
-                        disk_score, disk_asi = parse_judge_output(judge_round_dirs[0])
-                        if disk_score > 0.0 or disk_asi.get("critique"):
-                            feedback = {
-                                "score": disk_score,
-                                "dimensions": disk_asi.get("dimensions", {}),
-                                "strengths": disk_asi.get("strengths", []),
-                                "weaknesses": disk_asi.get("weaknesses", []),
-                                "suggestions": disk_asi.get("suggestions", []),
-                                "critique": disk_asi.get("critique", ""),
-                            }
-                            logger.info(
-                                "[%s] Recovered feedback from disk: score=%.1f",
-                                agent, disk_score,
-                            )
 
                 logger.debug(
                     "[%s] proposer feedback: score=%.1f, dimensions=%s, strengths=%d, weaknesses=%d",
