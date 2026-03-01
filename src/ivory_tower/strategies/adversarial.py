@@ -604,6 +604,14 @@ class AdversarialStrategy:
 
                 return {"report": improved_text}
 
+            # No-op LM stub: GEPA defaults reflection_lm to "openai/gpt-5.1"
+            # (a string), which triggers ``make_litellm_lm()`` →
+            # ``import litellm`` even when a custom_candidate_proposer fully
+            # replaces the LLM reflection path.  Passing a callable skips the
+            # string→LM conversion entirely, avoiding the litellm dependency.
+            def _unused_lm(prompt):  # pragma: no cover
+                raise RuntimeError("reflection_lm should never be called when custom_candidate_proposer is set")
+
             gepa_config = GEPAConfig(
                 engine=EngineConfig(
                     max_metric_calls=max_rounds,
@@ -611,6 +619,7 @@ class AdversarialStrategy:
                 ),
                 reflection=ReflectionConfig(
                     custom_candidate_proposer=proposer,
+                    reflection_lm=_unused_lm,
                 ),
             )
 

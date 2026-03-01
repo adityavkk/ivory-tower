@@ -24,6 +24,10 @@ packages = ["src/ivory_tower"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+addopts = "-m 'not live'"
+markers = [
+    "live: real e2e tests that call external agents and APIs (run with: pytest -m live)",
+]
 
 [dependency-groups]
 dev = [

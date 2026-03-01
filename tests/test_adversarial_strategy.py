@@ -413,6 +413,7 @@ def _fake_gepa_modules():
     @dataclass
     class ReflectionConfig:
         custom_candidate_proposer: object = None
+        reflection_lm: object = None
 
     @dataclass
     class GEPAConfig:
@@ -450,21 +451,15 @@ def _make_optimize_result(best_candidate: dict, best_score: float = 7.5):
 
 
 def _patch_gepa_import(gepa_mod, gepa_oa):
-    """Return a context manager that patches builtins.__import__ for gepa.
+    """Return a context manager that injects fake gepa modules into sys.modules.
 
-    Handles both ``import gepa`` and ``from gepa.optimize_anything import ...``.
+    This ensures ``from gepa.optimize_anything import ...`` resolves to our
+    fakes even when the real gepa package is installed.
     """
-    import builtins
-    original_import = builtins.__import__
-
-    def mock_import(name, *args, **kwargs):
-        if name == "gepa.optimize_anything":
-            return gepa_oa
-        if name == "gepa":
-            return gepa_mod
-        return original_import(name, *args, **kwargs)
-
-    return patch.object(builtins, "__import__", side_effect=mock_import)
+    return patch.dict(sys.modules, {
+        "gepa": gepa_mod,
+        "gepa.optimize_anything": gepa_oa,
+    })
 
 
 class TestAdversarialRun:
