@@ -65,43 +65,65 @@ def _fake_counselors(prompt_file, agents, output_dir, verbose=False):
     return MagicMock(returncode=0)
 
 
-def _fake_gepa_module():
-    """Create a fake gepa module."""
-    gepa = ModuleType("gepa")
+def _fake_gepa_modules():
+    """Create fake gepa + gepa.optimize_anything modules matching the real API.
+
+    Returns (gepa_mod, gepa_oa) where gepa_oa has GEPAConfig, EngineConfig,
+    ReflectionConfig, and optimize_anything (initially None -- caller must set it).
+    """
+    gepa_mod = ModuleType("gepa")
+    gepa_oa = ModuleType("gepa.optimize_anything")
 
     @dataclass
     class EngineConfig:
         max_metric_calls: int = 3
+        raise_on_exception: bool = True
+
+    @dataclass
+    class ReflectionConfig:
+        custom_candidate_proposer: object = None
 
     @dataclass
     class GEPAConfig:
         engine: EngineConfig = None
+        reflection: ReflectionConfig = None
 
         def __post_init__(self):
             if self.engine is None:
                 self.engine = EngineConfig()
+            if self.reflection is None:
+                self.reflection = ReflectionConfig()
 
-    gepa.EngineConfig = EngineConfig
-    gepa.GEPAConfig = GEPAConfig
-    return gepa
+    gepa_oa.EngineConfig = EngineConfig
+    gepa_oa.GEPAConfig = GEPAConfig
+    gepa_oa.ReflectionConfig = ReflectionConfig
+    gepa_oa.optimize_anything = None  # caller sets this
+
+    gepa_mod.optimize_anything = gepa_oa
+
+    return gepa_mod, gepa_oa
 
 
 def _make_optimize_result(text: str = "Optimized report", score: float = 8.0):
+    """Create a mock GEPAResult matching the real API."""
     result = MagicMock()
+    result.val_aggregate_scores = [score - 2.0, score]
+    result.best_idx = 1
     result.best_candidate = {"report": text}
-    result.best_score = score
-    result.best_round = 1
-    result.history = [MagicMock(score=score, dimensions={})]
+    result.candidates = [{"report": "seed"}, {"report": text}]
+    result.total_metric_calls = 2
     return result
 
 
-def _mock_gepa_import(fake_gepa):
-    """Return a patched __import__ that intercepts 'gepa'."""
+def _mock_gepa_import(gepa_mod, gepa_oa):
+    """Return a patched __import__ that intercepts gepa and gepa.optimize_anything."""
     original_import = builtins.__import__
 
     def mock_import(name, *args, **kwargs):
+        if name == "gepa.optimize_anything":
+            return gepa_oa
         if name == "gepa":
-            return fake_gepa
+            return gepa_mod
         return original_import(name, *args, **kwargs)
 
     return mock_import
@@ -179,12 +201,12 @@ class TestAdversarialPipelineE2E:
             max_rounds=2,
         )
 
-        fake_gepa = _fake_gepa_module()
-        fake_gepa.optimize_anything = MagicMock(
+        gepa_mod, gepa_oa = _fake_gepa_modules()
+        gepa_oa.optimize_anything = MagicMock(
             return_value=_make_optimize_result()
         )
 
-        with patch.object(builtins, "__import__", side_effect=_mock_gepa_import(fake_gepa)):
+        with patch.object(builtins, "__import__", side_effect=_mock_gepa_import(gepa_mod, gepa_oa)):
             run_dir = run_pipeline(config)
 
         assert run_dir.exists()
@@ -208,12 +230,12 @@ class TestAdversarialPipelineE2E:
             max_rounds=1,
         )
 
-        fake_gepa = _fake_gepa_module()
-        fake_gepa.optimize_anything = MagicMock(
+        gepa_mod, gepa_oa = _fake_gepa_modules()
+        gepa_oa.optimize_anything = MagicMock(
             return_value=_make_optimize_result()
         )
 
-        with patch.object(builtins, "__import__", side_effect=_mock_gepa_import(fake_gepa)):
+        with patch.object(builtins, "__import__", side_effect=_mock_gepa_import(gepa_mod, gepa_oa)):
             run_dir = run_pipeline(config)
 
         # Seed outputs in phase1
@@ -242,12 +264,12 @@ class TestAdversarialPipelineE2E:
             max_rounds=1,
         )
 
-        fake_gepa = _fake_gepa_module()
-        fake_gepa.optimize_anything = MagicMock(
+        gepa_mod, gepa_oa = _fake_gepa_modules()
+        gepa_oa.optimize_anything = MagicMock(
             return_value=_make_optimize_result()
         )
 
-        with patch.object(builtins, "__import__", side_effect=_mock_gepa_import(fake_gepa)):
+        with patch.object(builtins, "__import__", side_effect=_mock_gepa_import(gepa_mod, gepa_oa)):
             run_dir = run_pipeline(config)
 
         # Load, re-save, load again -- should be identical
@@ -294,12 +316,12 @@ class TestResumeAdversarial:
         manifest.save(run_dir / "manifest.json")
         (run_dir / "topic.md").write_text("Resume test")
 
-        fake_gepa = _fake_gepa_module()
-        fake_gepa.optimize_anything = MagicMock(
+        gepa_mod, gepa_oa = _fake_gepa_modules()
+        gepa_oa.optimize_anything = MagicMock(
             return_value=_make_optimize_result()
         )
 
-        with patch.object(builtins, "__import__", side_effect=_mock_gepa_import(fake_gepa)):
+        with patch.object(builtins, "__import__", side_effect=_mock_gepa_import(gepa_mod, gepa_oa)):
             result_dir = resume_pipeline(run_dir)
 
         loaded = Manifest.load(result_dir / "manifest.json")

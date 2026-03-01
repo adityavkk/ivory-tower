@@ -179,8 +179,8 @@ class AdversarialStrategy:
 
         # Check gepa availability
         try:
-            import gepa  # noqa: F401
-        except ImportError:
+            from gepa.optimize_anything import optimize_anything  # noqa: F401
+        except (ImportError, ModuleNotFoundError):
             errors.append(
                 "The adversarial strategy requires the gepa package. "
                 "Install with: uv add gepa"
@@ -487,7 +487,12 @@ class AdversarialStrategy:
     ) -> Manifest:
         """Phase 2: Optimize each seed via GEPA with cross-agent judging."""
         try:
-            from gepa import optimize_anything, GEPAConfig, EngineConfig
+            from gepa.optimize_anything import (
+                optimize_anything,
+                GEPAConfig,
+                EngineConfig,
+                ReflectionConfig,
+            )
         except ImportError:
             raise RuntimeError(
                 "The adversarial strategy requires the gepa package. "
@@ -517,10 +522,6 @@ class AdversarialStrategy:
 
             seed_result = opt.seeds[agent]
             seed_result.status = PhaseStatus.RUNNING
-
-            gepa_config = GEPAConfig(
-                engine=EngineConfig(max_metric_calls=max_rounds)
-            )
 
             round_counter = [0]
 
@@ -568,8 +569,9 @@ class AdversarialStrategy:
 
             def proposer(
                 candidate: dict,
-                reflective_dataset: Any,
-            ) -> dict:
+                reflective_dataset: Mapping[str, Sequence[Mapping[str, Any]]],
+                components_to_update: list[str],
+            ) -> dict[str, str]:
                 """Send feedback to original agent to produce improved report."""
                 feedback = extract_feedback_from_reflective_dataset(
                     reflective_dataset if isinstance(reflective_dataset, dict) else {}
@@ -602,11 +604,20 @@ class AdversarialStrategy:
 
                 return {"report": improved_text}
 
+            gepa_config = GEPAConfig(
+                engine=EngineConfig(
+                    max_metric_calls=max_rounds,
+                    raise_on_exception=False,
+                ),
+                reflection=ReflectionConfig(
+                    custom_candidate_proposer=proposer,
+                ),
+            )
+
             try:
                 result = optimize_anything(
                     seed_candidate={"report": seed_text},
                     evaluator=evaluator,
-                    custom_candidate_proposer=proposer,
                     objective=(
                         "Optimize this research report for accuracy, depth, "
                         "coverage, source quality, and analytical rigor"
@@ -616,11 +627,18 @@ class AdversarialStrategy:
 
                 # Save optimized report
                 best = result.best_candidate
-                optimized_text = best.get("report", seed_text) if best else seed_text
+                if isinstance(best, dict):
+                    optimized_text = best.get("report", seed_text)
+                elif isinstance(best, str):
+                    optimized_text = best
+                else:
+                    optimized_text = seed_text
                 optimized_file = phase2_dir / f"{agent}-optimized.md"
                 optimized_file.write_text(optimized_text)
 
-                seed_result.final_score = result.best_score if hasattr(result, "best_score") else None
+                # Extract best score from val_aggregate_scores
+                best_score = result.val_aggregate_scores[result.best_idx] if result.val_aggregate_scores else None
+                seed_result.final_score = best_score
                 seed_result.status = PhaseStatus.COMPLETE
 
                 # Save optimization log
@@ -735,29 +753,33 @@ class AdversarialStrategy:
         return manifest
 
     def _save_optimization_log(self, run_dir: Path, agent: str, result: Any) -> None:
-        """Save optimization log JSON for one agent."""
+        """Save optimization log JSON for one agent.
+
+        Works with real GEPAResult (val_aggregate_scores, candidates, best_idx)
+        and with mock results that may use different attribute names.
+        """
         phase2_dir = run_dir / "phase2"
-        opt = getattr(result, "history", [])
 
-        score_history = []
-        for i, entry in enumerate(opt):
-            score_history.append({
-                "round": i + 1,
-                "score": getattr(entry, "score", 0.0),
-                "dimensions": getattr(entry, "dimensions", {}),
-            })
+        # Extract scores -- real GEPAResult uses val_aggregate_scores
+        scores = getattr(result, "val_aggregate_scores", None) or []
+        score_history = [
+            {"round": i + 1, "score": s}
+            for i, s in enumerate(scores)
+        ]
 
-        seed_score = score_history[0]["score"] if score_history else 0.0
-        final_score = getattr(result, "best_score", 0.0)
+        seed_score = scores[0] if scores else 0.0
+        best_idx = getattr(result, "best_idx", len(scores) - 1 if scores else 0)
+        final_score = scores[best_idx] if scores and best_idx < len(scores) else 0.0
+        total_calls = getattr(result, "total_metric_calls", len(scores)) or len(scores)
 
         log_data = {
             "agent": agent,
             "judge": "",  # filled later from manifest
             "seed_score": seed_score,
             "final_score": final_score,
-            "rounds": len(score_history),
+            "rounds": total_calls,
             "score_history": score_history,
-            "best_round": getattr(result, "best_round", len(score_history)),
+            "best_round": best_idx + 1,
             "improvement": f"+{final_score - seed_score:.1f} ({seed_score:.1f} -> {final_score:.1f})",
         }
 
