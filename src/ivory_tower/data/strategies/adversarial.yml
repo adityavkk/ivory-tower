@@ -1,0 +1,31 @@
+strategy:
+  name: adversarial
+  description: "GEPA-optimized adversarial research with cross-evaluation"
+  version: 1
+  engine: ivory_tower.strategies.adversarial.AdversarialStrategy
+
+phases:
+  - name: seed
+    description: "Independent seed report generation"
+    isolation: full
+    agents: all
+    output: "{agent}-seed.md"
+
+  - name: optimize
+    description: "Iterative adversarial optimization via GEPA"
+    isolation: full
+    agents: all
+    output: "{agent}-optimized.md"
+
+  - name: synthesize
+    description: "Merge both optimized reports"
+    isolation: read-all
+    agents: [synthesizer]
+    input_from: optimize
+    output: "final-report.md"
+
+defaults:
+  agents:
+    min: 2
+    max: 2
+  rounds: 10
