@@ -26,15 +26,18 @@ from ivory_tower.models import (
     SynthesisPhase,
 )
 from ivory_tower.log import (
+    SYM_OK,
+    SYM_ROUND,
+    SYM_SCORE,
+    create_agent_progress,
     fmt_agent,
     fmt_bullet,
     fmt_duration,
-    fmt_ok,
     fmt_fail,
+    fmt_ok,
     fmt_phase,
     fmt_score,
-    SYM_ROUND,
-    SYM_SCORE,
+    phase_spinner,
 )
 from ivory_tower.prompts import (
     build_adversarial_synthesis_prompt,
@@ -804,12 +807,14 @@ class AdversarialStrategy:
         phase1_dir.mkdir(parents=True, exist_ok=True)
 
         t0 = time.monotonic()
-        run_counselors(
-            prompt_file=prompt_file,
-            agents=config.agents,
-            output_dir=phase1_dir,
-            verbose=config.verbose,
-        )
+        agents_label = ", ".join(config.agents)
+        with phase_spinner(f"Agents researching: [agent]{agents_label}[/agent]"):
+            run_counselors(
+                prompt_file=prompt_file,
+                agents=config.agents,
+                output_dir=phase1_dir,
+                verbose=config.verbose,
+            )
 
         # Normalize: <slug>/<agent>.md -> <agent>-seed.md
         _normalize_counselors_output(phase1_dir, config.agents, suffix="-seed.md")
@@ -902,12 +907,13 @@ class AdversarialStrategy:
                 prompt_file.write_text(judge_prompt)
 
                 # Run judge
-                run_counselors(
-                    prompt_file=prompt_file,
-                    agents=[judge],
-                    output_dir=round_dir,
-                    verbose=config.verbose,
-                )
+                with phase_spinner(f"{fmt_agent(judge)} judging {fmt_agent(agent)} (round {round_num})"):
+                    run_counselors(
+                        prompt_file=prompt_file,
+                        agents=[judge],
+                        output_dir=round_dir,
+                        verbose=config.verbose,
+                    )
 
                 # Parse output
                 score, asi = parse_judge_output(round_dir)
@@ -1042,12 +1048,13 @@ class AdversarialStrategy:
                 except Exception:
                     logger.debug("[%s] Failed to write round debug file", agent, exc_info=True)
 
-                run_counselors(
-                    prompt_file=prompt_file,
-                    agents=[agent],
-                    output_dir=improve_dir,
-                    verbose=config.verbose,
-                )
+                with phase_spinner(f"{fmt_agent(agent)} improving report (round {seed_result.rounds_completed + 1})"):
+                    run_counselors(
+                        prompt_file=prompt_file,
+                        agents=[agent],
+                        output_dir=improve_dir,
+                        verbose=config.verbose,
+                    )
 
                 try:
                     improved_text = read_counselors_output(improve_dir, agent)
@@ -1078,15 +1085,16 @@ class AdversarialStrategy:
             )
 
             try:
-                result = optimize_anything(
-                    seed_candidate={"report": seed_text},
-                    evaluator=evaluator,
-                    objective=(
-                        "Optimize this research report for accuracy, depth, "
-                        "coverage, source quality, and analytical rigor"
-                    ),
-                    config=gepa_config,
-                )
+                with phase_spinner(f"Optimizing {fmt_agent(agent)}..."):
+                    result = optimize_anything(
+                        seed_candidate={"report": seed_text},
+                        evaluator=evaluator,
+                        objective=(
+                            "Optimize this research report for accuracy, depth, "
+                            "coverage, source quality, and analytical rigor"
+                        ),
+                        config=gepa_config,
+                    )
 
                 # Save optimized report
                 best = result.best_candidate
@@ -1228,12 +1236,13 @@ class AdversarialStrategy:
         prompt_file.write_text(prompt_text)
 
         t0 = time.monotonic()
-        run_counselors(
-            prompt_file=prompt_file,
-            agents=[config.synthesizer],
-            output_dir=phase3_dir,
-            verbose=config.verbose,
-        )
+        with phase_spinner(f"Synthesizer [agent]{config.synthesizer}[/agent] working..."):
+            run_counselors(
+                prompt_file=prompt_file,
+                agents=[config.synthesizer],
+                output_dir=phase3_dir,
+                verbose=config.verbose,
+            )
 
         _normalize_counselors_output(phase3_dir, [config.synthesizer], suffix=".md")
         synth_out = phase3_dir / f"{config.synthesizer}.md"

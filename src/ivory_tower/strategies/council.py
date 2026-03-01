@@ -29,11 +29,14 @@ from ivory_tower.prompts import (
 import logging
 
 from ivory_tower.log import (
+    SYM_OK,
+    create_agent_progress,
     fmt_agent,
     fmt_bullet,
     fmt_duration,
     fmt_ok,
     fmt_phase,
+    phase_spinner,
 )
 
 logger = logging.getLogger(__name__)
@@ -337,12 +340,14 @@ class CouncilStrategy:
 
         t0 = time.monotonic()
         try:
-            run_counselors(
-                prompt_file=prompt_file,
-                agents=config.agents,
-                output_dir=phase1_dir,
-                verbose=config.verbose,
-            )
+            agents_label = ", ".join(config.agents)
+            with phase_spinner(f"Agents researching: [agent]{agents_label}[/agent]"):
+                run_counselors(
+                    prompt_file=prompt_file,
+                    agents=config.agents,
+                    output_dir=phase1_dir,
+                    verbose=config.verbose,
+                )
         except CounselorsError:
             research.status = PhaseStatus.FAILED
             research.completed_at = _now_iso()
@@ -382,8 +387,6 @@ class CouncilStrategy:
         phase2_dir = run_dir / "phase2"
         phase2_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info(fmt_bullet("Refining: %s reviewing peers"), fmt_agent(agent))
-
         own_report = (phase1_dir / f"{agent}-report.md").read_text()
 
         # Collect all peer reports
@@ -420,10 +423,6 @@ class CouncilStrategy:
             shutil.copy2(agent_out, final_out)
 
         elapsed = time.monotonic() - t0
-        logger.info(
-            fmt_bullet("%s refinement done [duration](%s)[/duration]"),
-            fmt_agent(agent), fmt_duration(elapsed),
-        )
         return session_key, elapsed
 
     def _run_phase2(self, run_dir: Path, config: Any, manifest: Manifest) -> Manifest:
@@ -438,20 +437,38 @@ class CouncilStrategy:
 
         t0 = time.monotonic()
 
-        with ThreadPoolExecutor() as executor:
-            futures = {
-                executor.submit(
-                    self._run_single_refinement, run_dir, config, agent
-                ): agent
+        progress = create_agent_progress()
+        with progress:
+            tasks = {
+                agent: progress.add_task(
+                    f"  [agent]{agent}[/agent] refining...",
+                    total=None,
+                )
                 for agent in config.agents
             }
-            for future in as_completed(futures):
-                session_key, duration = future.result()
-                cp.sessions[session_key] = CrossPollinationSession(
-                    status=PhaseStatus.COMPLETE,
-                    duration_seconds=duration,
-                    output=f"phase2/{session_key}.md",
-                )
+
+            with ThreadPoolExecutor() as executor:
+                futures = {
+                    executor.submit(
+                        self._run_single_refinement, run_dir, config, agent
+                    ): agent
+                    for agent in config.agents
+                }
+                for future in as_completed(futures):
+                    agent = futures[future]
+                    session_key, duration = future.result()
+                    cp.sessions[session_key] = CrossPollinationSession(
+                        status=PhaseStatus.COMPLETE,
+                        duration_seconds=duration,
+                        output=f"phase2/{session_key}.md",
+                    )
+                    # Mark this agent's task as done
+                    progress.update(
+                        tasks[agent],
+                        description=f"  [ok]{SYM_OK}[/ok] [agent]{agent}[/agent] refined ({fmt_duration(duration)})",
+                        completed=100,
+                        total=100,
+                    )
 
         elapsed = time.monotonic() - t0
         logger.info(
@@ -498,12 +515,13 @@ class CouncilStrategy:
         prompt_file.write_text(prompt_text)
 
         t0 = time.monotonic()
-        run_counselors(
-            prompt_file=prompt_file,
-            agents=[config.synthesizer],
-            output_dir=phase3_dir,
-            verbose=config.verbose,
-        )
+        with phase_spinner(f"Synthesizer [agent]{config.synthesizer}[/agent] working..."):
+            run_counselors(
+                prompt_file=prompt_file,
+                agents=[config.synthesizer],
+                output_dir=phase3_dir,
+                verbose=config.verbose,
+            )
 
         _normalize_counselors_output(phase3_dir, [config.synthesizer], suffix=".md")
         synth_out = phase3_dir / f"{config.synthesizer}.md"

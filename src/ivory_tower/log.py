@@ -21,10 +21,20 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import Literal
+import time
+from contextlib import contextmanager
+from typing import Generator, Literal
 
 from rich.console import Console
 from rich.logging import RichHandler
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskID,
+    TextColumn,
+    TimeElapsedColumn,
+)
 from rich.theme import Theme
 
 # ---- Rich console & theme --------------------------------------------------
@@ -143,3 +153,64 @@ def fmt_fail(msg: str) -> str:
 def fmt_bullet(msg: str) -> str:
     """Format a step/bullet line."""
     return f"  [dim]{SYM_ARROW}[/dim] {msg}"
+
+
+# ---- Live spinners & progress -----------------------------------------------
+
+
+@contextmanager
+def phase_spinner(
+    message: str,
+    *,
+    done_message: str | None = None,
+    spinner: str = "dots",
+) -> Generator[None, None, None]:
+    """Show an animated spinner while a blocking operation runs.
+
+    Usage::
+
+        with phase_spinner("Agents researching..."):
+            run_counselors(...)
+
+    The spinner renders on stderr via the shared *console*.  When the
+    block exits, the spinner is replaced with a checkmark and the
+    optional *done_message* (or the original message + duration).
+    """
+    t0 = time.monotonic()
+    with console.status(
+        f"  [dim]{SYM_ARROW}[/dim] {message}",
+        spinner=spinner,
+        spinner_style="cyan",
+    ):
+        yield
+    elapsed = time.monotonic() - t0
+    final = done_message or message
+    console.print(
+        f"  [ok]{SYM_OK}[/ok] {final} [duration]({fmt_duration(elapsed)})[/duration]"
+    )
+
+
+def create_agent_progress() -> Progress:
+    """Create a ``Progress`` instance styled for tracking concurrent agents.
+
+    Returns a ``Progress`` object that the caller should use as a
+    context manager.  Add tasks with ``progress.add_task(agent_name)``,
+    then call ``progress.update(task_id, advance=...)`` or
+    ``progress.update(task_id, completed=100)`` when done.
+
+    Usage::
+
+        progress = create_agent_progress()
+        with progress:
+            tasks = {agent: progress.add_task(agent, total=None) for agent in agents}
+            ...  # launch work
+            progress.update(tasks[agent], description=f"[ok]{SYM_OK}[/ok] {agent}", completed=100, total=100)
+    """
+    return Progress(
+        SpinnerColumn("dots", style="cyan"),
+        TextColumn("  {task.description}"),
+        BarColumn(bar_width=20, style="dim", complete_style="green", finished_style="green"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=False,
+    )
