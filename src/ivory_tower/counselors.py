@@ -7,9 +7,14 @@ falls back to bunx then npx so users don't need a separate install step.
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import subprocess
 from pathlib import Path
+
+from ivory_tower.log import fmt_agent, fmt_bullet
+
+logger = logging.getLogger(__name__)
 
 
 class CounselorsError(Exception):
@@ -111,10 +116,14 @@ def run_counselors(
         kwargs["stdout"] = subprocess.PIPE
         kwargs["stderr"] = subprocess.PIPE
 
+    agents_str = ", ".join(fmt_agent(a) for a in agents)
+    logger.debug(fmt_bullet("counselors run: %s -> %s"), agents_str, output_dir.name)
+
     result = subprocess.run(cmd, **kwargs)
 
     if result.returncode != 0:
         stderr_text = result.stderr or ""
         raise CounselorsError(stderr_text, stderr=stderr_text)
 
+    logger.debug(fmt_bullet("counselors session finished (exit %d)"), result.returncode)
     return result

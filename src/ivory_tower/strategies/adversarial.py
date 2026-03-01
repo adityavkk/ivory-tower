@@ -25,6 +25,17 @@ from ivory_tower.models import (
     SeedOptimizationResult,
     SynthesisPhase,
 )
+from ivory_tower.log import (
+    fmt_agent,
+    fmt_bullet,
+    fmt_duration,
+    fmt_ok,
+    fmt_fail,
+    fmt_phase,
+    fmt_score,
+    SYM_ROUND,
+    SYM_SCORE,
+)
 from ivory_tower.prompts import (
     build_adversarial_synthesis_prompt,
     build_improvement_prompt,
@@ -582,6 +593,13 @@ class AdversarialStrategy:
         manifest = self._run_synthesis(run_dir, config, manifest)
 
         manifest.total_duration_seconds = time.monotonic() - t0
+
+        logger.info("")
+        logger.info(
+            fmt_ok("Adversarial pipeline complete [duration](%s)[/duration]"),
+            fmt_duration(manifest.total_duration_seconds),
+        )
+
         manifest.save(run_dir / "manifest.json")
         return manifest
 
@@ -769,7 +787,9 @@ class AdversarialStrategy:
 
     def _run_seed_generation(self, run_dir: Path, config: Any, manifest: Manifest) -> Manifest:
         """Phase 1: Both agents independently research the topic."""
-        logger.info("Phase 1: Starting seed generation with agents %s", config.agents)
+        logger.info(fmt_phase("Phase 1 -- Seed Generation"))
+        agents_str = ", ".join(fmt_agent(a) for a in config.agents)
+        logger.info(fmt_bullet("Agents: %s"), agents_str)
         sg: ResearchPhase = manifest.phases["seed_generation"]
         sg.status = PhaseStatus.RUNNING
         sg.started_at = _now_iso()
@@ -806,7 +826,10 @@ class AdversarialStrategy:
                 output=f"phase1/{agent}-seed.md",
             )
 
-        logger.info("Phase 1: Seed generation complete (%.1fs)", elapsed)
+        logger.info(
+            fmt_ok("Phase 1 complete [duration](%s)[/duration]"),
+            fmt_duration(elapsed),
+        )
         manifest.save(run_dir / "manifest.json")
         return manifest
 
@@ -840,6 +863,11 @@ class AdversarialStrategy:
         agents = config.agents
         agent_a, agent_b = agents[0], agents[1]
         max_rounds = config.max_rounds
+
+        logger.info("")
+        logger.info(fmt_phase("Phase 2 -- Adversarial Optimization"))
+        logger.info(fmt_bullet("Agent A: %s  |  Agent B: %s"), fmt_agent(agents[0]), fmt_agent(agents[1]))
+        logger.info(fmt_bullet("Max rounds: %d"), max_rounds)
 
         t0 = time.monotonic()
 
@@ -917,7 +945,10 @@ class AdversarialStrategy:
 
                 seed_result.rounds_completed = round_num
 
-                logger.info("[%s] Round %d: score=%.1f", agent, round_num, score)
+                logger.info(
+                    fmt_bullet("%s Round %d  %s [score]%s[/score]"),
+                    SYM_ROUND, round_num, fmt_agent(agent), fmt_score(score),
+                )
                 if score == 0.0:
                     logger.warning("[%s] Round %d returned score 0.0 -- judge output may have failed to parse", agent, round_num)
 
@@ -929,7 +960,10 @@ class AdversarialStrategy:
                 components_to_update: list[str],
             ) -> dict[str, str]:
                 """Send feedback to original agent to produce improved report."""
-                logger.info("[%s] Proposer called for round %d", agent, seed_result.rounds_completed + 1)
+                logger.info(
+                    fmt_bullet("%s %s proposer called (round %d)"),
+                    SYM_ROUND, fmt_agent(agent), seed_result.rounds_completed + 1,
+                )
                 logger.debug(
                     "[%s] proposer: reflective_dataset keys=%s, candidate report length=%d",
                     agent,
@@ -973,10 +1007,9 @@ class AdversarialStrategy:
                         reflective_dataset if isinstance(reflective_dataset, dict) else {}
                     )
 
-                logger.debug(
-                    "[%s] proposer feedback: score=%.1f, dimensions=%s, strengths=%d, weaknesses=%d",
-                    agent, feedback.get("score", 0.0),
-                    list(feedback.get("dimensions", {}).keys()),
+                logger.info(
+                    fmt_bullet("  Feedback: [score]%s[/score]  strengths=%d  weaknesses=%d"),
+                    fmt_score(feedback.get("score", 0.0)),
                     len(feedback.get("strengths", [])),
                     len(feedback.get("weaknesses", [])),
                 )
@@ -1072,6 +1105,14 @@ class AdversarialStrategy:
                 seed_result.status = PhaseStatus.COMPLETE
 
                 # Save optimization log
+                seed_score = seed_result.seed_score or 0.0
+                final_score = best_score if best_score is not None else 0.0
+                logger.info(
+                    fmt_ok("%s optimization done: [score]%s[/score] -> [score]%s[/score]"),
+                    fmt_agent(agent),
+                    fmt_score(seed_score),
+                    fmt_score(final_score),
+                )
                 self._save_optimization_log(run_dir, agent, result)
                 logger.info("Optimization complete for %s: best_score=%s, rounds=%s",
                             agent, best_score, getattr(result, "total_metric_calls", "?"))
@@ -1129,7 +1170,12 @@ class AdversarialStrategy:
 
     def _run_synthesis(self, run_dir: Path, config: Any, manifest: Manifest) -> Manifest:
         """Phase 3: Synthesize both optimized reports."""
-        logger.info("Phase 3: Starting synthesis with %s", config.synthesizer)
+        logger.info("")
+        logger.info(fmt_phase("Phase 3 -- Synthesis"))
+        logger.info(
+            fmt_bullet("Synthesizer: %s combining optimized reports"),
+            fmt_agent(config.synthesizer),
+        )
         sp: SynthesisPhase = manifest.phases["synthesis"]
         sp.status = PhaseStatus.RUNNING
         sp.started_at = _now_iso()
@@ -1200,7 +1246,10 @@ class AdversarialStrategy:
         sp.completed_at = _now_iso()
         sp.duration_seconds = elapsed
 
-        logger.info("Phase 3: Synthesis complete (%.1fs)", elapsed)
+        logger.info(
+            fmt_ok("Phase 3 complete [duration](%s)[/duration]"),
+            fmt_duration(elapsed),
+        )
         manifest.save(run_dir / "manifest.json")
         return manifest
 
