@@ -93,12 +93,55 @@ def _normalize_counselors_output(
                 break
 
         if src is not None:
+            src = _find_best_report_file(src.parent, src)
             shutil.copy2(src, dst)
             logger.debug("Normalized %s -> %s", src, dst)
         else:
             logger.warning(
                 "Could not find output for agent %s in %s", agent, output_dir
             )
+
+
+def _find_best_report_file(slug_dir: Path, initial_file: Path) -> Path:
+    """Pick the best report file from a counselors slug directory.
+
+    If another .md file in *slug_dir* is substantially larger (>2x) than
+    *initial_file*, assume it is the real report (agents often write their
+    actual output to a separate file like ``research_report.md``).
+
+    Files excluded from consideration: ``prompt.md``, ``summary.md``.
+    """
+    EXCLUDED = {"prompt.md", "summary.md"}
+    try:
+        initial_size = initial_file.stat().st_size
+    except OSError:
+        return initial_file
+
+    best = initial_file
+    best_size = initial_size
+
+    for md in slug_dir.glob("*.md"):
+        if md.name in EXCLUDED:
+            continue
+        if md == initial_file:
+            continue
+        try:
+            sz = md.stat().st_size
+        except OSError:
+            continue
+        if sz > best_size:
+            best = md
+            best_size = sz
+
+    # Only switch if the better candidate is substantially larger (>2x)
+    if best != initial_file and best_size > initial_size * 2:
+        logger.debug(
+            "Best-file heuristic: %s (%d bytes) -> %s (%d bytes)",
+            initial_file.name, initial_size, best.name, best_size,
+        )
+        return best
+
+    return initial_file
 
 
 # ---------------------------------------------------------------------------
@@ -293,7 +336,13 @@ def parse_judge_output(judging_dir: Path) -> tuple[float, dict]:
 def extract_feedback_from_reflective_dataset(
     reflective_dataset: Mapping[str, Sequence[Mapping[str, Any]]]
 ) -> dict:
-    """Extract feedback from GEPA's reflective_dataset format."""
+    """Extract feedback from GEPA's reflective_dataset format.
+
+    GEPA stores evaluator results as ``(score, asi_dict)`` tuples.  The
+    reflective_dataset maps component names to sequences of ASI dicts.
+    The *score* may live in the ASI dict under ``"score"`` or
+    ``"overall_score"``, or it may be absent (GEPA tracks it separately).
+    """
     defaults = {
         "score": 0.0,
         "dimensions": {},
@@ -303,20 +352,68 @@ def extract_feedback_from_reflective_dataset(
         "critique": "",
     }
     if not reflective_dataset:
+        logger.debug("[feedback] reflective_dataset is empty")
         return defaults
+
+    logger.debug(
+        "[feedback] reflective_dataset keys=%s, sizes=%s",
+        list(reflective_dataset.keys()),
+        {k: len(v) for k, v in reflective_dataset.items()},
+    )
 
     for key in reflective_dataset:
         entries = reflective_dataset[key]
-        if entries:
-            last_entry = entries[-1]
-            return {
-                "score": float(last_entry.get("score", last_entry.get("overall_score", 0.0))),
-                "dimensions": last_entry.get("dimensions", {}),
-                "strengths": last_entry.get("strengths", []),
-                "weaknesses": last_entry.get("weaknesses", []),
-                "suggestions": last_entry.get("suggestions", []),
-                "critique": last_entry.get("critique", ""),
-            }
+        if not entries:
+            continue
+        last_entry = entries[-1]
+        logger.debug(
+            "[feedback] key=%s, last_entry keys=%s, sample=%s",
+            key,
+            list(last_entry.keys()) if isinstance(last_entry, dict) else type(last_entry).__name__,
+            str(last_entry)[:500] if last_entry else "empty",
+        )
+
+        if not isinstance(last_entry, dict):
+            continue
+
+        # Try multiple paths to find the score
+        score = 0.0
+        for score_key in ("score", "overall_score"):
+            val = last_entry.get(score_key)
+            if val is not None:
+                try:
+                    score = float(val)
+                    break
+                except (TypeError, ValueError):
+                    pass
+
+        # Check nested "dimensions" for dimension scores if top-level score missing
+        dimensions = last_entry.get("dimensions", {})
+        if score == 0.0 and isinstance(dimensions, dict) and dimensions:
+            # Compute average of dimension scores as fallback
+            dim_scores = []
+            for v in dimensions.values():
+                try:
+                    dim_scores.append(float(v))
+                except (TypeError, ValueError):
+                    pass
+            if dim_scores:
+                score = sum(dim_scores) / len(dim_scores)
+                logger.debug(
+                    "[feedback] No explicit score, computed %.1f from %d dimension scores",
+                    score, len(dim_scores),
+                )
+
+        return {
+            "score": score,
+            "dimensions": dimensions,
+            "strengths": last_entry.get("strengths", []),
+            "weaknesses": last_entry.get("weaknesses", []),
+            "suggestions": last_entry.get("suggestions", []),
+            "critique": last_entry.get("critique", ""),
+        }
+
+    logger.debug("[feedback] No usable entries found in reflective_dataset")
     return defaults
 
 
@@ -328,18 +425,26 @@ def read_counselors_output(output_dir: Path, agent: str) -> str:
         reverse=True,
     )
     for slug_dir in slug_dirs:
+        candidate: Path | None = None
         # 1. Exact match
         agent_file = slug_dir / f"{agent}.md"
         if agent_file.exists():
-            return agent_file.read_text()
-        # 2. Substring match: any .md whose stem contains the agent name
-        md_files = list(slug_dir.glob("*.md"))
-        for md in md_files:
-            if agent in md.stem:
-                return md.read_text()
-        # 3. Any .md file as last resort for this slug dir
-        if md_files:
-            return md_files[0].read_text()
+            candidate = agent_file
+        if candidate is None:
+            # 2. Substring match: any .md whose stem contains the agent name
+            md_files = list(slug_dir.glob("*.md"))
+            for md in md_files:
+                if agent in md.stem:
+                    candidate = md
+                    break
+        if candidate is None:
+            # 3. Any .md file as last resort for this slug dir
+            md_files = list(slug_dir.glob("*.md"))
+            if md_files:
+                candidate = md_files[0]
+        if candidate is not None:
+            best = _find_best_report_file(slug_dir, candidate)
+            return best.read_text()
 
     # Fallback: files directly in output_dir
     agent_file = output_dir / f"{agent}.md"
@@ -734,6 +839,10 @@ class AdversarialStrategy:
                 round_counter[0] = round_num
 
                 report_text = candidate.get("report", "")
+                logger.debug(
+                    "[%s] evaluator round %d: candidate report length=%d, first 200 chars: %s",
+                    agent, round_num, len(report_text), report_text[:200],
+                )
 
                 # Write judging prompt
                 judge_prompt = build_judging_prompt(config.topic, report_text)
@@ -800,8 +909,51 @@ class AdversarialStrategy:
             ) -> dict[str, str]:
                 """Send feedback to original agent to produce improved report."""
                 logger.info("[%s] Proposer called for round %d", agent, seed_result.rounds_completed + 1)
+                logger.debug(
+                    "[%s] proposer: reflective_dataset keys=%s, candidate report length=%d",
+                    agent,
+                    list(reflective_dataset.keys()) if isinstance(reflective_dataset, dict) else type(reflective_dataset).__name__,
+                    len(candidate.get("report", "")),
+                )
                 feedback = extract_feedback_from_reflective_dataset(
                     reflective_dataset if isinstance(reflective_dataset, dict) else {}
+                )
+
+                # Fallback: if reflective_dataset didn't yield usable feedback,
+                # read the most recent judge output file directly from disk.
+                if feedback["score"] == 0.0 and not feedback.get("critique"):
+                    logger.info(
+                        "[%s] reflective_dataset feedback empty, reading judge output from disk",
+                        agent,
+                    )
+                    # Find the most recent judging round dir for this agent
+                    judge_round_dirs = sorted(
+                        judging_dir.glob(f"round-*-{judge}-judges-{agent}"),
+                        key=lambda d: d.name,
+                        reverse=True,
+                    )
+                    if judge_round_dirs:
+                        disk_score, disk_asi = parse_judge_output(judge_round_dirs[0])
+                        if disk_score > 0.0 or disk_asi.get("critique"):
+                            feedback = {
+                                "score": disk_score,
+                                "dimensions": disk_asi.get("dimensions", {}),
+                                "strengths": disk_asi.get("strengths", []),
+                                "weaknesses": disk_asi.get("weaknesses", []),
+                                "suggestions": disk_asi.get("suggestions", []),
+                                "critique": disk_asi.get("critique", ""),
+                            }
+                            logger.info(
+                                "[%s] Recovered feedback from disk: score=%.1f",
+                                agent, disk_score,
+                            )
+
+                logger.debug(
+                    "[%s] proposer feedback: score=%.1f, dimensions=%s, strengths=%d, weaknesses=%d",
+                    agent, feedback.get("score", 0.0),
+                    list(feedback.get("dimensions", {}).keys()),
+                    len(feedback.get("strengths", [])),
+                    len(feedback.get("weaknesses", [])),
                 )
 
                 improvement_prompt = build_improvement_prompt(
@@ -816,6 +968,21 @@ class AdversarialStrategy:
 
                 prompt_file = improve_dir / "improve-prompt.md"
                 prompt_file.write_text(improvement_prompt)
+
+                # Write debug info for this round
+                debug_file = improve_dir / "round-debug.json"
+                try:
+                    debug_file.write_text(json.dumps({
+                        "agent": agent,
+                        "round": seed_result.rounds_completed + 1,
+                        "feedback_score": feedback.get("score", 0.0),
+                        "feedback_dimensions": feedback.get("dimensions", {}),
+                        "feedback_strengths": feedback.get("strengths", []),
+                        "feedback_weaknesses": feedback.get("weaknesses", []),
+                        "candidate_report_length": len(candidate.get("report", "")),
+                    }, indent=2))
+                except Exception:
+                    logger.debug("[%s] Failed to write round debug file", agent, exc_info=True)
 
                 run_counselors(
                     prompt_file=prompt_file,
@@ -841,7 +1008,9 @@ class AdversarialStrategy:
 
             gepa_config = GEPAConfig(
                 engine=EngineConfig(
-                    max_metric_calls=max_rounds,
+                    # +1 because GEPA uses one metric call to evaluate the
+                    # seed before any improvement rounds begin.
+                    max_metric_calls=max_rounds + 1,
                     raise_on_exception=False,
                 ),
                 reflection=ReflectionConfig(
