@@ -78,14 +78,11 @@ class CouncilStrategy:
 
         sessions: dict[str, CrossPollinationSession] = {}
         for agent in config.agents:
-            for peer in config.agents:
-                if agent == peer:
-                    continue
-                key = f"{agent}-cross-{peer}"
-                sessions[key] = CrossPollinationSession(
-                    status=PhaseStatus.PENDING,
-                    output=f"phase2/{key}.md",
-                )
+            key = f"{agent}-refined"
+            sessions[key] = CrossPollinationSession(
+                status=PhaseStatus.PENDING,
+                output=f"phase2/{key}.md",
+            )
 
         return Manifest(
             run_id=run_id,
@@ -160,7 +157,6 @@ class CouncilStrategy:
         preview = prompt_preview[:200]
 
         n = len(config.agents)
-        phase2_sessions = n * (n - 1)
 
         print("=== Dry Run: Execution Plan ===")
         print()
@@ -171,7 +167,7 @@ class CouncilStrategy:
         print()
         print("Phases:")
         print(f"  1. Research: {n} agents research independently")
-        print(f"  2. Cross-Pollination: {phase2_sessions} refinement sessions")
+        print(f"  2. Cross-Pollination: {n} agents refine reports (each reviews all peers)")
         print(f"  3. Synthesis: {config.synthesizer} produces final report")
         print()
         print(f"Prompt Preview (first 200 chars):")
@@ -339,21 +335,28 @@ class CouncilStrategy:
         return manifest
 
     def _run_single_refinement(
-        self, run_dir: Path, config: Any, agent: str, peer: str,
+        self, run_dir: Path, config: Any, agent: str,
     ) -> tuple[str, float]:
-        """Run one refinement session."""
+        """Run one refinement session: agent reviews all peer reports."""
         phase1_dir = run_dir / "phase1"
         phase2_dir = run_dir / "phase2"
         phase2_dir.mkdir(parents=True, exist_ok=True)
 
         own_report = (phase1_dir / f"{agent}-report.md").read_text()
-        peer_report = (phase1_dir / f"{peer}-report.md").read_text()
+
+        # Collect all peer reports
+        peers = [a for a in config.agents if a != agent]
+        peer_parts = []
+        for peer in peers:
+            peer_report = (phase1_dir / f"{peer}-report.md").read_text()
+            peer_parts.append(f"### {peer}\n\n{peer_report}")
+        all_peer_reports = "\n\n---\n\n".join(peer_parts)
 
         prompt_text = build_refinement_prompt(
-            config.topic, own_report, peer_report, peer
+            config.topic, own_report, all_peer_reports
         )
 
-        session_key = f"{agent}-cross-{peer}"
+        session_key = f"{agent}-refined"
         prompt_file = run_dir / "phase2" / f"{session_key}-prompt.md"
         prompt_file.write_text(prompt_text)
 
@@ -377,26 +380,19 @@ class CouncilStrategy:
         return session_key, time.monotonic() - t0
 
     def _run_phase2(self, run_dir: Path, config: Any, manifest: Manifest) -> Manifest:
-        """Execute Phase 2: cross-pollination refinements."""
+        """Execute Phase 2: cross-pollination refinements (one per agent)."""
         cp: CrossPollinationPhase = manifest.phases["cross_pollination"]
         cp.status = PhaseStatus.RUNNING
         cp.started_at = _now_iso()
 
         t0 = time.monotonic()
 
-        pairs = [
-            (agent, peer)
-            for agent in config.agents
-            for peer in config.agents
-            if agent != peer
-        ]
-
         with ThreadPoolExecutor() as executor:
             futures = {
                 executor.submit(
-                    self._run_single_refinement, run_dir, config, agent, peer
-                ): (agent, peer)
-                for agent, peer in pairs
+                    self._run_single_refinement, run_dir, config, agent
+                ): agent
+                for agent in config.agents
             }
             for future in as_completed(futures):
                 session_key, duration = future.result()

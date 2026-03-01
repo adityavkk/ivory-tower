@@ -14,42 +14,76 @@ _RESEARCH_TEMPLATE = """\
 - If you find contradictory information, present both sides with sources
 
 ## Output Requirements
-- Write a comprehensive research report
-- Include a Sources section with URLs at the end
-- Note gaps in your research -- areas where you couldn't find solid information
+
+Write a comprehensive, standalone research report structured as follows:
+
+1. **Executive Summary** -- the most important findings in 2-3 paragraphs
+2. **Background & Context** -- what the reader needs to know to understand the topic
+3. **Key Findings** -- organized by theme, with evidence and source citations for each claim
+4. **Analysis** -- your interpretation of the findings: tradeoffs, implications, and recommendations where appropriate
+5. **Open Questions & Gaps** -- areas where you couldn't find solid information or where evidence is contradictory
+6. **Sources** -- comprehensive list of all URLs and references cited
+
+Write in depth. Each section should be substantive, not just bullet points. Support claims
+with evidence and cite sources inline. This report should be useful as a standalone
+reference document on the topic.
 {custom_instructions}"""
 
 _REFINEMENT_TEMPLATE = """\
-# Cross-Pollination Review
+# Cross-Pollination: Produce Your Definitive Report
 
-You previously conducted deep research and produced a report. Another AI agent
-independently researched the SAME topic. You now have access to both reports.
+You previously conducted deep research and produced a report on the topic below.
+Other AI agents independently researched the SAME topic. You now have access to
+your report and all peer reports.
 
 ## Your Task
 
-1. **Read YOUR report** carefully -- understand what you covered well and where you went shallow
-2. **Read the OTHER report with healthy skepticism** -- look for:
-   - Ideas and angles they explored that you completely missed
-   - Areas where they went deeper than you did
+Produce a **complete, standalone research report** -- your definitive version on this
+topic. This is NOT a review or commentary. It is a full rewrite of your report that
+incorporates the best of what you and the other agents found.
+
+### Process
+
+1. **Audit your own report** -- identify where you went deep, where you were shallow,
+   and where you may have errors or unsupported claims
+2. **Read all peer reports with healthy skepticism** -- look for:
+   - Ideas, angles, and findings they covered that you missed entirely
+   - Areas where they went deeper or found better sources than you
    - Claims that seem plausible but lack strong sourcing -- verify these independently
-   - Contradictions or disagreements between the reports
+   - Contradictions between your report and theirs
    - Unique sources or evidence you didn't find
-   - Reasoning or conclusions that don't follow from the evidence
-3. **Conduct NEW research** (web searches) on:
-   - Avenues inspired by the other report that go BEYOND what either covered
-   - Contradictions that need resolution through additional evidence
-   - Gaps that both reports share
-4. **Write a REFINED analysis** that captures what this peer review uncovered
+   - Reasoning or conclusions that don't follow from evidence
+3. **Conduct NEW web research** to:
+   - Verify peer claims before incorporating them -- do not accept anything at face value
+   - Resolve contradictions between reports with additional evidence
+   - Fill gaps that ALL reports share
+   - Explore avenues inspired by peer reports that go beyond what anyone covered
+4. **Write your complete, refined report** using the structure below
+
+## Output Structure
+
+Write your report with this structure:
+
+1. **Executive Summary** -- the most important findings in 2-3 paragraphs
+2. **Background & Context** -- what the reader needs to know to understand the topic
+3. **Key Findings** -- organized by theme, with evidence and source citations for each claim
+4. **Analysis** -- your interpretation of the findings: tradeoffs, implications, and
+   recommendations where appropriate
+5. **Open Questions & Gaps** -- what remains uncertain or under-explored
+6. **Sources** -- comprehensive list of all URLs and references cited
 
 ## Critical Rules
 
-- Do NOT simply copy content from the other report into yours
-- Do NOT accept claims from the other report at face value -- verify key facts independently via web search
-- Use the other report as a SPRINGBOARD for NEW investigation
-- The goal is to explore territory that NEITHER report adequately covered
-- Your refined analysis should contain substantial NEW content, not just reorganized old content
-- If the other report makes a strong claim your research contradicts, investigate further and present evidence for both sides
-- Maintain your unique perspective -- don't homogenize with the other report
+- The output must be a **complete standalone report**, not a diff, review, or commentary
+- Do NOT reference the other agents, the cross-pollination process, or "the peer report"
+   in your output -- write as if this is your original work
+- Do NOT simply copy content from peer reports -- verify claims independently and rewrite
+   in your own analysis
+- When peer reports contradict your findings, investigate further and present the
+   evidence-backed conclusion (or both sides if genuinely unresolved)
+- Incorporate the BEST insights from all sources but maintain your own analytical voice
+- Your report should be substantially richer and more accurate than your original --
+   if the peer reports didn't add anything, you aren't reading them critically enough
 
 ## Topic
 {topic_content}
@@ -57,36 +91,54 @@ independently researched the SAME topic. You now have access to both reports.
 ## Your Original Report
 {own_report_content}
 
-## Peer Report ({peer_agent_name})
-{peer_report_content}"""
+## Peer Reports
+{peer_reports}"""
 
 _SYNTHESIS_TEMPLATE = """\
 # Research Synthesis
 
-{agent_count} AI agents independently researched a topic, then cross-pollinated
-findings by skeptically reviewing each other's work. You have all their refinement
-reports below.
+{agent_count} AI agents independently researched a topic, then each produced a refined
+report after cross-pollinating findings by skeptically reviewing each other's work. You
+have all their refined reports below. Each report is already a comprehensive standalone
+document -- your job is to produce the definitive final version.
 
 ## Topic
 {topic_content}
 
-## Refinement Reports
+## Refined Reports
 {all_refinement_reports}
 
 ## Your Task
 
-Synthesize everything into a comprehensive final report with this structure:
+Synthesize these reports into a single, comprehensive final report. Since each input
+report is already a full research document, focus on:
+
+- **Resolving contradictions** -- where reports disagree, weigh the evidence and reach a
+  conclusion (or explain why the question is genuinely unresolved)
+- **Combining depth** -- each agent may have gone deepest on different subtopics; merge
+  the best analysis from each into a unified treatment
+- **Deduplicating without losing nuance** -- remove redundancy but preserve distinct
+  analytical perspectives where they add value
+- **Identifying what everyone missed** -- gaps that persist across ALL reports are the
+  most important open questions
+
+Write the final report with this structure:
 
 1. **Executive Summary** -- the most important findings across all investigations
-2. **Key Findings** -- organized by THEME (not by source agent), combining the strongest evidence
-3. **Areas of Consensus** -- where agents agree, with combined supporting evidence
-4. **Areas of Disagreement** -- where agents differed, with analysis of why and which view is better supported
-5. **Novel Insights** -- unique findings that emerged from the cross-pollination refinement round
-6. **Open Questions** -- what remains uncertain even after independent investigations
+2. **Background & Context** -- unified context that the reader needs
+3. **Key Findings** -- organized by THEME (not by source agent), combining the strongest
+   evidence from all reports. Go deep. This is the most important section.
+4. **Areas of Consensus** -- where agents independently reached the same conclusions,
+   with combined supporting evidence
+5. **Areas of Disagreement** -- where agents differed, with analysis of why and which
+   view is better supported by evidence
+6. **Open Questions** -- what remains uncertain even after multiple independent investigations
 7. **Sources** -- comprehensive, deduplicated list of all URLs and references
-8. **Methodology** -- brief description of the multi-agent research process (agents used, phases, timing)
+8. **Methodology** -- brief description of the multi-agent research process (agents used,
+   phases, timing)
 
-Be thorough. This is the final deliverable."""
+Be thorough and write in depth. This is the final deliverable -- it should be the
+definitive reference document on this topic."""
 
 
 _JUDGING_TEMPLATE = """\
@@ -283,15 +335,13 @@ def build_research_prompt(
 def build_refinement_prompt(
     topic: str,
     own_report: str,
-    peer_report: str,
-    peer_agent_name: str,
+    peer_reports: str,
 ) -> str:
-    """Build a Phase 2 cross-pollination prompt for one agent-peer pair."""
+    """Build a Phase 2 cross-pollination prompt for one agent reviewing all peers."""
     return _REFINEMENT_TEMPLATE.format(
         topic_content=topic,
         own_report_content=own_report,
-        peer_report_content=peer_report,
-        peer_agent_name=peer_agent_name,
+        peer_reports=peer_reports,
     )
 
 

@@ -44,22 +44,29 @@ class TestBuildRefinementPrompt:
         """All substitution values appear in output."""
         topic = "AI safety research"
         own_report = "My detailed findings on AI safety..."
-        peer_report = "Peer findings on alignment problems..."
-        peer_name = "codex-5.3-xhigh"
+        peer_reports = "### codex-5.3-xhigh\n\nPeer findings on alignment problems..."
 
-        result = build_refinement_prompt(topic, own_report, peer_report, peer_name)
+        result = build_refinement_prompt(topic, own_report, peer_reports)
 
         assert topic in result
         assert own_report in result
-        assert peer_report in result
-        assert peer_name in result
+        assert "Peer findings on alignment problems..." in result
+        assert "codex-5.3-xhigh" in result
 
     def test_refinement_prompt_has_critical_rules(self):
         """Critical Rules section exists in refinement prompt."""
         result = build_refinement_prompt(
-            "topic", "own report", "peer report", "peer-agent"
+            "topic", "own report", "### peer-agent\n\npeer report"
         )
         assert "## Critical Rules" in result
+
+    def test_refinement_prompt_requests_standalone_report(self):
+        """Refinement prompt asks for a complete standalone report, not a diff."""
+        result = build_refinement_prompt(
+            "topic", "own report", "### peer\n\npeer report"
+        )
+        assert "standalone report" in result.lower()
+        assert "## Output Structure" in result
 
 
 class TestBuildSynthesisPrompt:
@@ -76,10 +83,10 @@ class TestBuildSynthesisPrompt:
         # All 8 required final-report sections mentioned in synthesis prompt
         for section in [
             "Executive Summary",
+            "Background & Context",
             "Key Findings",
             "Areas of Consensus",
             "Areas of Disagreement",
-            "Novel Insights",
             "Open Questions",
             "Sources",
             "Methodology",
