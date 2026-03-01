@@ -9,6 +9,7 @@ from typing import Annotated, Optional
 
 import typer
 
+from ivory_tower.log import setup_logging
 from ivory_tower.counselors import (
     CounselorsError,
     list_available_agents,
@@ -130,6 +131,9 @@ def research(
         )
         raise typer.Exit(code=1)
 
+    # Configure logging
+    setup_logging(verbose=verbose)
+
     config = RunConfig(
         topic=resolved_topic,
         agents=agent_list,
@@ -194,6 +198,7 @@ def resume(
         typer.echo(f"Error: no manifest.json found in {run_dir}", err=True)
         raise typer.Exit(code=1)
 
+    setup_logging(verbose=verbose)
     resume_pipeline(run_dir, verbose=verbose)
     typer.echo(f"Resumed. Report: {run_dir / 'phase3' / 'final-report.md'}")
 

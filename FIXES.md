@@ -1,154 +1,212 @@
 # Adversarial Strategy -- Known Issues & Fixes
 
-Tracking everything that needs fixing to make the adversarial strategy produce real improvements. Ordered by impact.
+## Previously fixed (issues 1-8)
+
+Issues 1-6 and 8 were fixed in earlier commits on this branch. Score parsing now works (6.5 instead of 0.0), judge prompt restructured, logging added, file normalization improved, 0.0 scores omitted from synthesis.
 
 ---
 
-## 1. Evaluator always returns 0.0 (critical)
+## Remaining issues (ordered by impact)
 
-**Symptom:** GEPA logs show `New subsample score 0.0 is not better than old score 0.0, skipping` on every round. No improvement is ever accepted.
+### 11. Seed capture reads conversational output, not the actual report (CRITICAL)
 
-**Root cause:** `parse_judge_output()` fails to extract the JSON from the judge agent's response. The agents wrap their output in markdown prose, extra commentary, or non-standard fencing that the current regex in `_extract_json_from_markdown()` doesn't match. When parsing fails, the function returns `0.0` as the default score.
+**Status:** Open.
+
+**Symptom:** Phase 1 seed files contain agent meta-commentary ("I'll create a comprehensive report...") or planning notes ("## Goal -- produce a report..."), NOT the actual research report. The Anthropic agent writes its real 20K report to `research_report.md` inside the counselors slug directory, but the orchestrator copies `{agent}.md` (3K conversational summary) as the seed.
+
+**Root cause:** Counselors writes per-agent output to `<slug>/<agent>.md` -- this is the agent's conversational/session output (what it "said"), not necessarily the artifact it produced. Some agents (OpenCode-based) use file-write tools to create separate report files during execution. The `_normalize_counselors_output()` function copies `{agent}.md` as the seed, ignoring these extra files.
+
+**Evidence from live run `20260301-220933-5611e3`:**
+```
+phase1/<slug>/opencode-anthropic-fast.md      3,047 bytes  ← conversational summary (copied as seed)
+phase1/<slug>/research_report.md             20,633 bytes  ← ACTUAL report (ignored!)
+phase1/<slug>/opencode-openai-fast.md        12,595 bytes  ← planning notes (copied as seed)
+```
+
+The `run.json` from counselors tracks `outputFile` pointing to `{agent}.md` only. It does not track extra files written by agents.
+
+**Fix:** After `run_counselors()` completes for phase 1, pick the **largest** `.md` file in the slug directory (excluding `prompt.md`, `summary.md`) as the seed, not necessarily `{agent}.md`. Heuristic:
+1. Check if a file other than `{agent}.md`, `prompt.md`, `summary.md` exists in the slug dir and is substantially larger (>2x) than `{agent}.md`
+2. If yes, use that file as the seed (it's the actual report)
+3. If no, use `{agent}.md` as before
+
+This heuristic should be in `_normalize_counselors_output()` or a new helper. Apply the same logic in `read_counselors_output()` for improvement rounds.
+
+**Files to edit:**
+- `src/ivory_tower/strategies/adversarial.py` -- `_normalize_counselors_output()`, `read_counselors_output()`
+
+**How to verify:** After fixing, run `uv run pytest tests/ -x -v` (all 194 mocked tests should pass). Then check that the fix would pick `research_report.md` (20K) over `opencode-anthropic-fast.md` (3K) by examining the logic.
+
+---
+
+### 12. Feedback passthrough from GEPA reflective_dataset is broken (CRITICAL)
+
+**Status:** Open.
+
+**Symptom:** The improvement prompt (phase 2, proposer round) shows **example/template feedback** instead of actual judge feedback. From the live run:
+
+```
+## Judge's Feedback
+### Overall Score: 0.0/10
+### Strengths
+- Comprehensive coverage of major subtopics          ← THIS IS THE EXAMPLE FROM THE PROMPT TEMPLATE
+- Good use of recent primary sources in Section 3    ← NOT REAL JUDGE FEEDBACK
+### Weaknesses
+- Section 2 lacks citations for key claims
+- No discussion of counterarguments to the main thesis
+```
+
+Meanwhile, the actual judge gave scores like 5.4/10 and 7.6/10 with detailed, specific feedback. That feedback never reached the improving agent.
+
+**Root cause:** `extract_feedback_from_reflective_dataset()` at `adversarial.py:293` iterates GEPA's `reflective_dataset` (a `Mapping[str, Sequence[Mapping[str, Any]]]`), takes the last entry from the first key, and looks for `score`, `overall_score`, `dimensions`, `strengths`, `weaknesses`, `suggestions`, `critique`. 
+
+The problem is that GEPA's reflective_dataset structure doesn't match what we expect. The evaluator returns `(score, asi_dict)` where `asi_dict` has keys `dimensions`, `strengths`, `weaknesses`, `suggestions`, `critique` -- but NOT `score` or `overall_score`. The score is tracked separately by GEPA in its own data structures. So `extract_feedback_from_reflective_dataset` finds the ASI dict but `last_entry.get("score")` returns None, and `last_entry.get("overall_score")` also returns None, giving `score: 0.0`.
+
+The dimension values (7, 6, 5, 7, 6) and strings ("Comprehensive coverage...") in the improvement prompt match the **example JSON in `_JUDGING_TEMPLATE`** exactly. This means either (a) GEPA's reflective_dataset was empty so defaults were used, or (b) the reflective_dataset contained the example values because an earlier parsing step extracted the example JSON from the prompt instead of the actual judge output.
 
 **Fix:**
-- Make `_extract_json_from_markdown()` more resilient: try `json.loads()` on the raw text first, handle fenced blocks with extra whitespace, handle the case where the agent writes a preamble before the JSON.
-- Add a fallback regex that extracts `"overall_score": <number>` directly from the text even when the full JSON doesn't parse.
-- Log a warning when JSON parsing fails so the issue is visible during runs.
-- Add live-agent test cases that capture real judge output formats and verify parsing.
+1. Add debug logging to dump the raw `reflective_dataset` structure the proposer receives: `logger.debug("[%s] reflective_dataset keys=%s, structure=%s", agent, list(reflective_dataset.keys()), {k: len(v) for k, v in reflective_dataset.items()})`
+2. Also log the first entry: `logger.debug("[%s] reflective_dataset first entry sample: %s", agent, str(dict(list(reflective_dataset.items())[0][1][-1]))[:500] if reflective_dataset else "empty")`
+3. Fix `extract_feedback_from_reflective_dataset` to handle GEPA's actual format. The function may need to look for nested structures or different key names.
+4. As a fallback: if the reflective_dataset doesn't contain usable feedback, the proposer should read the most recent judge output file directly from disk (the `judging/round-NN-*.md` file) and parse it with `parse_judge_output()` instead of relying on GEPA's reflective_dataset.
 
-**File:** `src/ivory_tower/strategies/adversarial.py` -- `parse_judge_output()`, `_extract_json_from_markdown()`
+**Files to edit:**
+- `src/ivory_tower/strategies/adversarial.py` -- `extract_feedback_from_reflective_dataset()`, the `proposer()` closure inside `optimize_seed()`
 
----
-
-## 2. Judge prompt asks for bare JSON but agents add prose
-
-**Symptom:** The judging prompt says "Respond with ONLY a JSON object (no markdown fencing, no extra text)" but agents (especially OpenCode-wrapped ones) ignore this and write explanatory text around the JSON.
-
-**Fix:**
-- Restructure the judging prompt to use a tool-call / structured-output framing that agents are more likely to respect.
-- Alternatively, accept that agents will add prose and make the parser robust enough to handle it (see fix 1).
-- Consider a two-pass approach: ask the agent to judge in natural language first, then ask it to emit the structured JSON separately.
-
-**File:** `src/ivory_tower/prompts.py` -- `_JUDGING_TEMPLATE`
+**How to verify:** Run `uv run pytest tests/ -x -v` (mocked tests pass). Then run live: `uv run pytest tests/test_live_e2e.py -m live -k adversarial -v -s` and check the improvement prompt files in `phase2/{agent}-improve-round-*/improve-prompt.md` -- they should contain real judge scores and feedback, not the example template values.
 
 ---
 
-## 3. Feedback passed to proposer is empty when scores are 0.0
+### 13. `max_rounds` maps 1:1 to `max_metric_calls` but seed eval consumes a call
 
-**Symptom:** `extract_feedback_from_reflective_dataset()` returns defaults because GEPA's reflective dataset contains `0.0` scores and empty feedback dicts. The improvement prompt then shows `0/10` for every dimension with `(none provided)` for strengths/weaknesses/suggestions.
+**Status:** Open.
 
-**Root cause:** Circular dependency with issue 1 -- when the evaluator returns `(0.0, {"error": "Failed to parse..."})`, the ASI dict has no `dimensions`, `strengths`, etc. This gets stored in the reflective dataset and the proposer receives garbage feedback.
+**Symptom:** `--max-rounds 2` sets `max_metric_calls=2` in GEPA config. But GEPA uses one metric call to evaluate the seed, leaving only 1 call for evaluating an improved candidate. The user expects 2 *improvement* rounds, not 1 seed eval + 1 improvement eval.
 
-**Fix:**
-- Even when JSON parsing fails, extract whatever text the judge wrote and pass it as a `critique` string so the improving agent at least has the natural-language feedback.
-- In `evaluator()`, when `parse_judge_output()` returns an error ASI, read the raw judge markdown and stuff it into `asi["critique"]`.
+**Evidence:** Optimization log shows `rounds: 3` evaluator calls but `score_history` has only 1 entry (the seed). GEPA's stopper fired after 2 metric calls.
 
-**File:** `src/ivory_tower/strategies/adversarial.py` -- `evaluator()` closure, `extract_feedback_from_reflective_dataset()`
+**Fix:** In `_run_adversarial_optimization()`, set `max_metric_calls = max_rounds + 1` (or `max_rounds * 2 + 1` if GEPA does subsample evals) so the user gets the number of improvement rounds they asked for.
 
----
+**File to edit:**
+- `src/ivory_tower/strategies/adversarial.py` -- the `GEPAConfig` construction around line 775
 
-## 4. No error logging or observability during optimization
-
-**Symptom:** When things go wrong (JSON parse failure, counselors error, file not found), the errors are silently swallowed. The only signal is `0.0` scores in the optimization log.
-
-**Fix:**
-- Add a proper `logging.getLogger(__name__)` logger.
-- Log at WARNING level when judge output fails to parse.
-- Log at INFO level each round's score and whether the candidate was accepted.
-- Log at ERROR level when counselors subprocess fails.
-- Write a `phase2/{agent}-debug.log` with the raw judge outputs for post-mortem analysis.
-
-**File:** `src/ivory_tower/strategies/adversarial.py` -- throughout
+**How to verify:** `uv run pytest tests/ -x -v` then live test -- optimization log should show `score_history` with entries for each round.
 
 ---
 
-## 5. `_normalize_counselors_output()` misses agent files
+### 14. Improvement prompt sends conversational output as "Your Current Report"
 
-**Symptom:** After `run_counselors()`, the expected file (`{agent}-seed.md` or `{agent}.md`) sometimes doesn't exist because the counselors CLI writes to a slug-based subdirectory with a different naming convention (e.g., `report.md` or a session-id-based name).
+**Status:** Open. Direct consequence of issue 11.
 
-**Root cause:** The normalization function only checks the most recently modified slug directory and only falls back to `report.md` when there's exactly 1 agent. Multi-agent runs or agents with non-standard output names are missed.
+**Symptom:** The improvement prompt's "## Your Current Report" section contains the 3K conversational meta-commentary, not the 20K actual report. The improving agent is told to improve a summary it didn't write, not the real report.
 
-**Fix:**
-- Walk all `.md` files in the slug directory and match by content heuristic (e.g., which agent session produced it) when filename matching fails.
-- Add a more aggressive fallback: if only one `.md` file exists in the slug dir and one expected output is missing, use it regardless of name.
-- Consider standardizing the counselors `--tools` naming so output filenames are predictable.
+**Evidence from `phase2/opencode-anthropic-fast-improve-round-03/improve-prompt.md`:**
+```
+## Your Current Report
+I'll read the file and follow the instructions.
+I'll create a comprehensive research report comparing WebSocket vs SSE...
+Now let me gather more information about scalability...
+```
 
-**File:** `src/ivory_tower/strategies/adversarial.py` -- `_normalize_counselors_output()`, `read_counselors_output()`
+This is the agent's conversational output, not a research report.
 
----
+**Root cause:** The `proposer()` closure passes `candidate.get("report", "")` as the current report. The `candidate` dict comes from GEPA, which stores whatever was in the seed candidate -- and the seed was set from `seed_file.read_text()` which reads the normalized seed file (the conversational output, per issue 11).
 
-## 6. Optimized report may be the raw seed (no actual improvement)
-
-**Symptom:** Because GEPA sees `0.0 is not better than 0.0` on every round, the `best_candidate` is always the seed. The "optimized" report is identical to the seed.
-
-**Root cause:** Direct consequence of issue 1. Even if the proposer successfully produces an improved report, GEPA rejects it because both old and new scores are 0.0.
-
-**Fix:**
-- Fix issue 1 (score parsing).
-- Additionally, consider setting GEPA's `raise_on_exception=True` during development so silent failures surface immediately.
-- Add a post-optimization assertion or warning: if `final_score == seed_score == 0.0`, log that optimization likely failed.
-
-**File:** `src/ivory_tower/strategies/adversarial.py` -- `optimize_seed()`
+**Fix:** Fixing issue 11 (seed capture) automatically fixes this. Once the seed contains the real report, GEPA's candidate will contain the real report, and the improvement prompt will show the real report.
 
 ---
 
-## 7. Thread safety of round_counter and seed_result mutations
+### 15. Proposer reads conversational output from improvement rounds too
 
-**Symptom:** No observed bug yet, but `optimize_seed()` captures `seed_result` (a mutable manifest object) and `round_counter` (a list used as mutable int) in closures that run inside GEPA's optimization loop while two such loops run concurrently in a ThreadPoolExecutor.
+**Status:** Open. Same pattern as issue 11/14 but for improvement rounds.
 
-**Fix:**
-- Each `optimize_seed()` call has its own closure scope so there's no cross-thread sharing of `round_counter` or `seed_result`. But confirm that `manifest.save()` isn't called concurrently from inside the closures (it isn't -- only after `optimize_seed` returns). Low priority, just worth auditing.
+**Symptom:** After `run_counselors()` in the proposer, `read_counselors_output()` returns `{agent}.md` from the slug dir. If the agent wrote its improved report to a separate file (e.g., `improved_research_report.md`), that file is ignored. The proposer returns the conversational output to GEPA as the "improved" candidate.
 
----
+**Evidence:** `phase2/opencode-anthropic-fast-improve-round-03/`:
+```
+opencode-anthropic-fast-improve-round-03/<slug>/opencode-anthropic-fast.md   3,366 bytes  ← returned by read_counselors_output
+improved_research_report.md                                                  25,486 bytes  ← ignored!
+```
 
-## 8. Synthesis prompt shows `0.0/10` scores
+**Fix:** Apply the same "pick the largest substantive .md file" heuristic from issue 11 to `read_counselors_output()`. When there are extra `.md` files in the output directory (outside the slug dir or inside it) that are substantially larger than `{agent}.md`, prefer those.
 
-**Symptom:** The adversarial synthesis prompt includes `scored 0.0/10 by agent_b` which misleads the synthesizer into thinking the reports are terrible.
-
-**Root cause:** Consequence of issue 1 cascading into `_run_synthesis()`.
-
-**Fix:**
-- When scores are 0.0 (likely indicating parse failure), omit the score from the synthesis prompt or add a note that scoring was unavailable.
-- Better: fix issue 1 so real scores flow through.
-
-**File:** `src/ivory_tower/strategies/adversarial.py` -- `_run_synthesis()`, `src/ivory_tower/prompts.py` -- `_ADVERSARIAL_SYNTHESIS_TEMPLATE`
+**Files to edit:**
+- `src/ivory_tower/strategies/adversarial.py` -- `read_counselors_output()`
 
 ---
 
-## 9. Council live tests untested
+### 16. Log the exact input to each GEPA improvement round
 
-**Symptom:** `TestCouncilLiveE2E` exists but has never been run. Unknown if council strategy works end-to-end with live agents.
+**Status:** Open.
 
-**Fix:**
-- Run `uv run pytest -m live -k council -v` and fix whatever breaks.
+**Symptom:** It's impossible to debug the optimization loop without seeing what GEPA passed to the proposer and evaluator at each round.
 
-**File:** `tests/test_live_e2e.py`
+**Fix:** Add detailed round-by-round logging:
+1. In `evaluator()`: log the length of `candidate["report"]` and the first 200 chars
+2. In `proposer()`: log the `reflective_dataset` structure (keys + entry count per key), the extracted feedback dict (score, dimension scores), and the length of `candidate["report"]`
+3. Write a `phase2/{agent}-round-{N}-debug.json` with the full feedback dict passed to `build_improvement_prompt`
 
----
-
-## 10. `litellm` left in venv but not in dependencies
-
-**Symptom:** `litellm` was installed during development (`uv add litellm`) but later made unnecessary by the `_unused_lm` callable workaround. It's still in the venv.
-
-**Fix:**
-- Run `uv remove litellm` to clean the venv.
-- Verify GEPA still works without it (it should -- the no-op callable bypasses the code path that imports litellm).
+**File to edit:**
+- `src/ivory_tower/strategies/adversarial.py` -- `evaluator()` and `proposer()` closures
 
 ---
 
-## Priority order
+## Fix dependency tree
 
-| # | Issue | Impact | Effort |
-|---|-------|--------|--------|
-| 1 | Score parsing returns 0.0 | Blocks all optimization | Medium |
-| 2 | Judge prompt ignored by agents | Causes issue 1 | Low |
-| 3 | Empty feedback to proposer | Degrades improvement quality | Low (fixed by 1) |
-| 4 | No logging | Debugging is blind | Low |
-| 5 | File normalization misses agents | Can crash pipeline | Medium |
-| 6 | Optimized == seed | User-facing quality | Fixed by 1 |
-| 7 | Thread safety audit | Preventive | Low |
-| 8 | Synthesis shows 0.0 scores | Misleads synthesizer | Low (fixed by 1) |
-| 9 | Council live tests unrun | Unknown breakage | Low |
-| 10 | Stale litellm in venv | Cleanup | Trivial |
+```
+Issue 11 (seed capture)
+  └── Issue 14 (improvement prompt has wrong report) -- fixed by 11
+  └── Issue 15 (proposer returns wrong improved text) -- same heuristic as 11
 
-Fixing issues 1-4 would make the adversarial strategy functional. Issues 5-10 are polish.
+Issue 12 (feedback passthrough)
+  └── Add logging to diagnose reflective_dataset structure
+  └── Fix extract_feedback_from_reflective_dataset or bypass it
+
+Issue 13 (max_rounds off by one)
+  └── Simple: max_metric_calls = max_rounds + 1
+
+Issue 16 (debug logging)
+  └── Independent, do alongside other fixes
+```
+
+**Recommended execution order:**
+1. Fix 11 + 15 together (seed capture + read_counselors_output best-file heuristic)
+2. Fix 12 (feedback passthrough -- add logging first, then fix based on what you see)
+3. Fix 13 (max_rounds mapping)
+4. Fix 16 (debug logging for GEPA rounds)
+5. Run live tests to verify end-to-end improvement
+
+---
+
+## Context for subagent
+
+**IMPORTANT: ALL work MUST happen in the git worktree at `/Users/auk000v/dev/tools/ivory-tower-fixes`.** Do NOT read, write, or run commands in `/Users/auk000v/dev/tools/ivory-tower` (that is the main worktree on `main` branch). Every file path, every `uv run pytest`, every `git commit`, every `git push` must use `/Users/auk000v/dev/tools/ivory-tower-fixes` as the working directory. This worktree is on branch `fix/adversarial-strategy`.
+
+**Key files (all paths relative to `/Users/auk000v/dev/tools/ivory-tower-fixes`):**
+- `src/ivory_tower/strategies/adversarial.py` -- all fix targets
+- `src/ivory_tower/prompts.py` -- prompt templates (no changes needed for these fixes)
+- `src/ivory_tower/counselors.py` -- counselors CLI wrapper (read-only reference)
+- `tests/test_adversarial_strategy.py` -- 45 mocked tests
+- `tests/test_adversarial_helpers.py` -- helper unit tests
+- `tests/test_integration.py` -- 21 integration tests
+- `tests/test_live_e2e.py` -- 18 live adversarial + 4 council tests
+
+**Counselors output structure:**
+```
+<output_dir>/
+  <slug>/                          ← counselors creates this
+    prompt.md                      ← copy of input prompt
+    run.json                       ← metadata (timestamp, tools, duration, wordCount, outputFile)
+    summary.md                     ← human-readable summary
+    <agent>.md                     ← agent's conversational/session output
+    <agent>.stderr                 ← agent's stderr
+    [extra files]                  ← agents may write additional files via file-write tools
+```
+
+The `{agent}.md` is the agent's conversational output. The REAL report may be in a separate file like `research_report.md` or `improved_research_report.md`. The heuristic to find the real report: pick the largest `.md` file excluding `prompt.md`, `summary.md`, and `run.json`.
+
+**Test commands (run from `/Users/auk000v/dev/tools/ivory-tower-fixes`):**
+- Mocked: `uv run pytest tests/ -x -v` (should see 194 passed)
+- Live adversarial: `uv run pytest tests/test_live_e2e.py -m live -k adversarial -v -s` (5-10 min)
+
+**After each fix:** commit with a descriptive message and `git push`. All git commands must run in `/Users/auk000v/dev/tools/ivory-tower-fixes`.

@@ -26,6 +26,21 @@ from ivory_tower.prompts import (
     build_synthesis_prompt,
 )
 
+import logging
+
+from ivory_tower.log import (
+    SYM_OK,
+    create_agent_progress,
+    fmt_agent,
+    fmt_bullet,
+    fmt_duration,
+    fmt_ok,
+    fmt_phase,
+    phase_spinner,
+)
+
+logger = logging.getLogger(__name__)
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -125,6 +140,7 @@ class CouncilStrategy:
 
     def run(self, run_dir: Path, config: Any, manifest: Manifest) -> Manifest:
         """Execute the full council pipeline: research, cross-pollination, synthesis."""
+        logger.info("")  # blank separator
         t0 = time.monotonic()
 
         manifest = self._run_phase1(run_dir, config, manifest)
@@ -132,6 +148,13 @@ class CouncilStrategy:
         manifest = self._run_phase3(run_dir, config, manifest)
 
         manifest.total_duration_seconds = time.monotonic() - t0
+
+        logger.info("")
+        logger.info(
+            fmt_ok("Council pipeline complete [duration](%s)[/duration]"),
+            fmt_duration(manifest.total_duration_seconds),
+        )
+
         manifest.save(run_dir / "manifest.json")
         return manifest
 
@@ -302,6 +325,10 @@ class CouncilStrategy:
         research.status = PhaseStatus.RUNNING
         research.started_at = _now_iso()
 
+        agents_str = ", ".join(fmt_agent(a) for a in config.agents)
+        logger.info(fmt_phase("Phase 1 -- Independent Research"))
+        logger.info(fmt_bullet("Agents: %s"), agents_str)
+
         prompt_text = build_research_prompt(
             config.topic, instructions=config.instructions, raw=config.raw
         )
@@ -313,12 +340,14 @@ class CouncilStrategy:
 
         t0 = time.monotonic()
         try:
-            run_counselors(
-                prompt_file=prompt_file,
-                agents=config.agents,
-                output_dir=phase1_dir,
-                verbose=config.verbose,
-            )
+            agents_label = ", ".join(config.agents)
+            with phase_spinner(f"Agents researching: [agent]{agents_label}[/agent]"):
+                run_counselors(
+                    prompt_file=prompt_file,
+                    agents=config.agents,
+                    output_dir=phase1_dir,
+                    verbose=config.verbose,
+                )
         except CounselorsError:
             research.status = PhaseStatus.FAILED
             research.completed_at = _now_iso()
@@ -326,12 +355,18 @@ class CouncilStrategy:
             manifest.save(run_dir / "manifest.json")
             raise
 
+        logger.info(fmt_bullet("Counselors session complete, normalizing output"))
         _normalize_counselors_output(phase1_dir, config.agents, suffix="-report.md")
 
         elapsed = time.monotonic() - t0
         research.status = PhaseStatus.COMPLETE
         research.completed_at = _now_iso()
         research.duration_seconds = elapsed
+
+        logger.info(
+            fmt_ok("Phase 1 complete [duration](%s)[/duration]"),
+            fmt_duration(elapsed),
+        )
 
         for agent in config.agents:
             output_rel = f"phase1/{agent}-report.md"
@@ -387,7 +422,8 @@ class CouncilStrategy:
         if agent_out.exists() and not final_out.exists():
             shutil.copy2(agent_out, final_out)
 
-        return session_key, time.monotonic() - t0
+        elapsed = time.monotonic() - t0
+        return session_key, elapsed
 
     def _run_phase2(self, run_dir: Path, config: Any, manifest: Manifest) -> Manifest:
         """Execute Phase 2: cross-pollination refinements (one per agent)."""
@@ -395,24 +431,50 @@ class CouncilStrategy:
         cp.status = PhaseStatus.RUNNING
         cp.started_at = _now_iso()
 
+        n = len(config.agents)
+        logger.info(fmt_phase("Phase 2 -- Cross-Pollination"))
+        logger.info(fmt_bullet("%d agents refining reports concurrently"), n)
+
         t0 = time.monotonic()
 
-        with ThreadPoolExecutor() as executor:
-            futures = {
-                executor.submit(
-                    self._run_single_refinement, run_dir, config, agent
-                ): agent
+        progress = create_agent_progress()
+        with progress:
+            tasks = {
+                agent: progress.add_task(
+                    f"  [agent]{agent}[/agent] refining...",
+                    total=None,
+                )
                 for agent in config.agents
             }
-            for future in as_completed(futures):
-                session_key, duration = future.result()
-                cp.sessions[session_key] = CrossPollinationSession(
-                    status=PhaseStatus.COMPLETE,
-                    duration_seconds=duration,
-                    output=f"phase2/{session_key}.md",
-                )
+
+            with ThreadPoolExecutor() as executor:
+                futures = {
+                    executor.submit(
+                        self._run_single_refinement, run_dir, config, agent
+                    ): agent
+                    for agent in config.agents
+                }
+                for future in as_completed(futures):
+                    agent = futures[future]
+                    session_key, duration = future.result()
+                    cp.sessions[session_key] = CrossPollinationSession(
+                        status=PhaseStatus.COMPLETE,
+                        duration_seconds=duration,
+                        output=f"phase2/{session_key}.md",
+                    )
+                    # Mark this agent's task as done
+                    progress.update(
+                        tasks[agent],
+                        description=f"  [ok]{SYM_OK}[/ok] [agent]{agent}[/agent] refined ({fmt_duration(duration)})",
+                        completed=100,
+                        total=100,
+                    )
 
         elapsed = time.monotonic() - t0
+        logger.info(
+            fmt_ok("Phase 2 complete [duration](%s)[/duration]"),
+            fmt_duration(elapsed),
+        )
         cp.status = PhaseStatus.COMPLETE
         cp.completed_at = _now_iso()
         cp.duration_seconds = elapsed
@@ -425,6 +487,12 @@ class CouncilStrategy:
         sp: SynthesisPhase = manifest.phases["synthesis"]
         sp.status = PhaseStatus.RUNNING
         sp.started_at = _now_iso()
+
+        logger.info(fmt_phase("Phase 3 -- Synthesis"))
+        logger.info(
+            fmt_bullet("Synthesizer: %s combining %d refined reports"),
+            fmt_agent(config.synthesizer), len(config.agents),
+        )
 
         phase2_dir = run_dir / "phase2"
         phase3_dir = run_dir / "phase3"
@@ -447,12 +515,13 @@ class CouncilStrategy:
         prompt_file.write_text(prompt_text)
 
         t0 = time.monotonic()
-        run_counselors(
-            prompt_file=prompt_file,
-            agents=[config.synthesizer],
-            output_dir=phase3_dir,
-            verbose=config.verbose,
-        )
+        with phase_spinner(f"Synthesizer [agent]{config.synthesizer}[/agent] working..."):
+            run_counselors(
+                prompt_file=prompt_file,
+                agents=[config.synthesizer],
+                output_dir=phase3_dir,
+                verbose=config.verbose,
+            )
 
         _normalize_counselors_output(phase3_dir, [config.synthesizer], suffix=".md")
         synth_out = phase3_dir / f"{config.synthesizer}.md"
@@ -464,6 +533,13 @@ class CouncilStrategy:
         sp.status = PhaseStatus.COMPLETE
         sp.completed_at = _now_iso()
         sp.duration_seconds = elapsed
+
+        final_path = phase3_dir / "final-report.md"
+        report_size = final_path.stat().st_size if final_path.exists() else 0
+        logger.info(
+            fmt_ok("Phase 3 complete [duration](%s)[/duration] -- final report: %d bytes"),
+            fmt_duration(elapsed), report_size,
+        )
 
         manifest.save(run_dir / "manifest.json")
         return manifest
