@@ -1,118 +1,31 @@
-"""Tests for ivory_tower.engine -- phase orchestration engine."""
+"""Tests for ivory_tower.engine -- pipeline orchestration.
+
+NOTE: Phase-level tests (run_phase1/2/3) were removed as part of the v2
+cleanup.  Those functions now live inside CouncilStrategy and are covered
+by tests/test_strategies.py.  This file focuses on RunConfig, run_pipeline,
+resume_pipeline, print_dry_run, and ConfigError.
+"""
+
+from __future__ import annotations
 
 import json
-import time
-from dataclasses import dataclass, field
 from pathlib import Path
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Stub models so tests work even if models.py isn't merged yet
-# ---------------------------------------------------------------------------
-try:
-    from ivory_tower.models import (
-        Manifest,
-        Flags,
-        PhaseStatus,
-        ResearchPhase,
-        CrossPollinationPhase,
-        CrossPollinationSession,
-        SynthesisPhase,
-        AgentResult,
-    )
-except ImportError:
-    from enum import Enum
-
-    class PhaseStatus(Enum):
-        PENDING = "pending"
-        RUNNING = "running"
-        COMPLETE = "complete"
-        FAILED = "failed"
-
-    @dataclass
-    class AgentResult:
-        status: PhaseStatus
-        output: str
-        duration_seconds: float | None = None
-
-    @dataclass
-    class CrossPollinationSession:
-        status: PhaseStatus
-        output: str
-        duration_seconds: float | None = None
-
-    @dataclass
-    class Flags:
-        raw: bool = False
-        instructions: str | None = None
-        verbose: bool = False
-
-    @dataclass
-    class ResearchPhase:
-        status: PhaseStatus
-        started_at: str | None = None
-        completed_at: str | None = None
-        duration_seconds: float | None = None
-        agents: dict[str, AgentResult] = field(default_factory=dict)
-
-    @dataclass
-    class CrossPollinationPhase:
-        status: PhaseStatus
-        started_at: str | None = None
-        completed_at: str | None = None
-        duration_seconds: float | None = None
-        sessions: dict[str, CrossPollinationSession] = field(default_factory=dict)
-
-    @dataclass
-    class SynthesisPhase:
-        status: PhaseStatus
-        agent: str
-        output: str
-        started_at: str | None = None
-        completed_at: str | None = None
-        duration_seconds: float | None = None
-
-    @dataclass
-    class Manifest:
-        run_id: str
-        topic: str
-        agents: list[str]
-        synthesizer: str
-        flags: Flags
-        phases: dict
-        total_duration_seconds: float | None = None
-
-        def to_dict(self):
-            return {}
-
-        def save(self, path: Path):
-            path.write_text(json.dumps({"run_id": self.run_id}))
-
-        @classmethod
-        def load(cls, path: Path):
-            return cls(**json.loads(path.read_text()))
-
-        @classmethod
-        def from_dict(cls, d):
-            return cls(**d)
-
-
-# Stub CounselorsError if needed
-try:
-    from ivory_tower.counselors import CounselorsError
-except ImportError:
-
-    class CounselorsError(Exception):
-        pass
-
-
+from ivory_tower.models import (
+    Manifest,
+    Flags,
+    PhaseStatus,
+    ResearchPhase,
+    CrossPollinationPhase,
+    CrossPollinationSession,
+    SynthesisPhase,
+    AgentResult,
+)
 from ivory_tower.engine import (
     RunConfig,
-    run_phase1,
-    run_phase2,
-    run_phase3,
     run_pipeline,
     print_dry_run,
 )
@@ -160,29 +73,6 @@ def _make_config(
     )
 
 
-def _create_phase1_outputs(run_dir: Path, agents: list[str]) -> None:
-    """Simulate phase1 output files existing on disk."""
-    phase1 = run_dir / "phase1"
-    phase1.mkdir(parents=True, exist_ok=True)
-    for agent in agents:
-        (phase1 / f"{agent}-report.md").write_text(
-            f"# Research Report by {agent}\n\nFindings about {TOPIC}..."
-        )
-
-
-def _create_phase2_outputs(run_dir: Path, agents: list[str]) -> None:
-    """Simulate phase2 output files existing on disk."""
-    phase2 = run_dir / "phase2"
-    phase2.mkdir(parents=True, exist_ok=True)
-    for agent in agents:
-        for peer in agents:
-            if agent != peer:
-                fname = f"{agent}-cross-{peer}.md"
-                (phase2 / fname).write_text(
-                    f"# Refinement by {agent} reviewing {peer}\n\nRefined findings..."
-                )
-
-
 # ---------------------------------------------------------------------------
 # 1. RunConfig defaults
 # ---------------------------------------------------------------------------
@@ -214,247 +104,7 @@ class TestRunConfig:
 
 
 # ---------------------------------------------------------------------------
-# 2-5. Phase 1 tests
-# ---------------------------------------------------------------------------
-
-
-class TestRunPhase1:
-    @patch("ivory_tower.engine.run_counselors")
-    @patch("ivory_tower.engine.build_research_prompt")
-    def test_run_phase1_writes_prompt_file(
-        self, mock_build, mock_counselors, tmp_path
-    ):
-        """research-prompt.md is written to run_dir."""
-        mock_build.return_value = "# Deep Research Task\n\nMy research prompt"
-
-        def _create_outputs(*args, **kwargs):
-            _create_phase1_outputs(tmp_path, AGENTS)
-
-        mock_counselors.side_effect = _create_outputs
-
-        manifest = _make_manifest()
-        config = _make_config()
-        run_phase1(tmp_path, config, manifest)
-
-        prompt_file = tmp_path / "research-prompt.md"
-        assert prompt_file.exists()
-        assert "Deep Research Task" in prompt_file.read_text()
-
-    @patch("ivory_tower.engine.run_counselors")
-    @patch("ivory_tower.engine.build_research_prompt")
-    def test_run_phase1_calls_counselors_with_all_agents(
-        self, mock_build, mock_counselors, tmp_path
-    ):
-        """run_counselors is called with all agents from config."""
-        mock_build.return_value = "prompt text"
-
-        def _create_outputs(*args, **kwargs):
-            _create_phase1_outputs(tmp_path, AGENTS)
-
-        mock_counselors.side_effect = _create_outputs
-
-        manifest = _make_manifest()
-        config = _make_config()
-        run_phase1(tmp_path, config, manifest)
-
-        mock_counselors.assert_called_once()
-        call_kwargs = mock_counselors.call_args
-        # Verify agents list passed to run_counselors
-        assert call_kwargs.kwargs.get("agents") == AGENTS or (
-            len(call_kwargs.args) > 1 and call_kwargs.args[1] == AGENTS
-        )
-
-    @patch("ivory_tower.engine.run_counselors")
-    @patch("ivory_tower.engine.build_research_prompt")
-    def test_run_phase1_updates_manifest_status(
-        self, mock_build, mock_counselors, tmp_path
-    ):
-        """Manifest research phase status -> 'complete' on success."""
-        mock_build.return_value = "prompt text"
-
-        def _create_outputs(*args, **kwargs):
-            _create_phase1_outputs(tmp_path, AGENTS)
-
-        mock_counselors.side_effect = _create_outputs
-
-        manifest = _make_manifest()
-        config = _make_config()
-        result = run_phase1(tmp_path, config, manifest)
-
-        research = result.phases["research"]
-        assert research.status is PhaseStatus.COMPLETE
-        assert research.duration_seconds is not None
-        assert research.duration_seconds >= 0
-        # Per-agent results populated
-        for agent in AGENTS:
-            assert agent in research.agents
-            assert research.agents[agent].status is PhaseStatus.COMPLETE
-
-    @patch("ivory_tower.engine.run_counselors")
-    @patch("ivory_tower.engine.build_research_prompt")
-    def test_run_phase1_failure_marks_failed(
-        self, mock_build, mock_counselors, tmp_path
-    ):
-        """On CounselorsError, manifest status -> 'failed' and error re-raised."""
-        mock_build.return_value = "prompt text"
-        mock_counselors.side_effect = CounselorsError("agent crashed")
-
-        manifest = _make_manifest()
-        config = _make_config()
-
-        with pytest.raises(CounselorsError, match="agent crashed"):
-            run_phase1(tmp_path, config, manifest)
-
-        research = manifest.phases["research"]
-        assert research.status is PhaseStatus.FAILED
-
-
-# ---------------------------------------------------------------------------
-# 6-7. Phase 2 tests
-# ---------------------------------------------------------------------------
-
-
-class TestRunPhase2:
-    @patch("ivory_tower.engine.run_counselors")
-    @patch("ivory_tower.engine.build_refinement_prompt")
-    def test_run_phase2_generates_correct_session_count(
-        self, mock_build_ref, mock_counselors, tmp_path
-    ):
-        """For 3 agents, 6 sessions (N*(N-1))."""
-        _create_phase1_outputs(tmp_path, AGENTS)
-        mock_build_ref.return_value = "refinement prompt"
-
-        invocation_count = 0
-
-        def _create_outputs(*args, **kwargs):
-            nonlocal invocation_count
-            invocation_count += 1
-            # Create the output file based on the prompt_file name or output_dir
-            _create_phase2_outputs(tmp_path, AGENTS)
-
-        mock_counselors.side_effect = _create_outputs
-
-        manifest = _make_manifest()
-        # Mark phase1 as complete so phase2 can proceed
-        manifest.phases["research"].status = PhaseStatus.COMPLETE
-        config = _make_config()
-
-        result = run_phase2(tmp_path, config, manifest)
-
-        cp = result.phases["cross_pollination"]
-        # N*(N-1) = 3*2 = 6 sessions
-        assert len(cp.sessions) == 6
-
-    @patch("ivory_tower.engine.run_counselors")
-    @patch("ivory_tower.engine.build_refinement_prompt")
-    def test_run_phase2_writes_refinement_prompts(
-        self, mock_build_ref, mock_counselors, tmp_path
-    ):
-        """Refinement prompt files are created for each agent-peer pair."""
-        _create_phase1_outputs(tmp_path, AGENTS)
-        mock_build_ref.return_value = "refinement prompt content"
-
-        def _create_outputs(*args, **kwargs):
-            _create_phase2_outputs(tmp_path, AGENTS)
-
-        mock_counselors.side_effect = _create_outputs
-
-        manifest = _make_manifest()
-        manifest.phases["research"].status = PhaseStatus.COMPLETE
-        config = _make_config()
-
-        run_phase2(tmp_path, config, manifest)
-
-        # build_refinement_prompt called 6 times (3*2)
-        assert mock_build_ref.call_count == 6
-
-        # Check that all agent-peer combinations were used
-        called_pairs = set()
-        for c in mock_build_ref.call_args_list:
-            # peer_agent_name is the 4th positional arg
-            args = c.args if c.args else ()
-            kwargs = c.kwargs if c.kwargs else {}
-            peer = kwargs.get("peer_agent_name") or (args[3] if len(args) > 3 else None)
-            called_pairs.add(peer)
-
-        # All agents appear as peers
-        for agent in AGENTS:
-            assert agent in called_pairs
-
-
-# ---------------------------------------------------------------------------
-# 8-9. Phase 3 tests
-# ---------------------------------------------------------------------------
-
-
-class TestRunPhase3:
-    @patch("ivory_tower.engine.run_counselors")
-    @patch("ivory_tower.engine.build_synthesis_prompt")
-    def test_run_phase3_reads_all_refinements(
-        self, mock_build_synth, mock_counselors, tmp_path
-    ):
-        """All phase2 refinement files are read and passed to synthesis prompt."""
-        _create_phase2_outputs(tmp_path, AGENTS)
-        mock_build_synth.return_value = "synthesis prompt"
-
-        def _create_outputs(*args, **kwargs):
-            phase3 = tmp_path / "phase3"
-            phase3.mkdir(parents=True, exist_ok=True)
-            (phase3 / "final-report.md").write_text("# Final Report\n\nSynthesis...")
-
-        mock_counselors.side_effect = _create_outputs
-
-        manifest = _make_manifest()
-        manifest.phases["research"].status = PhaseStatus.COMPLETE
-        manifest.phases["cross_pollination"].status = PhaseStatus.COMPLETE
-        config = _make_config()
-
-        run_phase3(tmp_path, config, manifest)
-
-        mock_build_synth.assert_called_once()
-        synth_call = mock_build_synth.call_args
-        # The all_refinement_reports arg should contain content from all 6 files
-        all_reports = synth_call.kwargs.get("all_refinement_reports") or synth_call.args[2]
-        for agent in AGENTS:
-            for peer in AGENTS:
-                if agent != peer:
-                    assert agent in all_reports
-
-    @patch("ivory_tower.engine.run_counselors")
-    @patch("ivory_tower.engine.build_synthesis_prompt")
-    def test_run_phase3_uses_synthesizer_agent(
-        self, mock_build_synth, mock_counselors, tmp_path
-    ):
-        """run_counselors called with synthesizer agent, not research agents."""
-        _create_phase2_outputs(tmp_path, AGENTS)
-        mock_build_synth.return_value = "synthesis prompt"
-
-        def _create_outputs(*args, **kwargs):
-            phase3 = tmp_path / "phase3"
-            phase3.mkdir(parents=True, exist_ok=True)
-            (phase3 / "final-report.md").write_text("# Final Report")
-
-        mock_counselors.side_effect = _create_outputs
-
-        manifest = _make_manifest(synthesizer="codex-5.3-xhigh")
-        manifest.phases["research"].status = PhaseStatus.COMPLETE
-        manifest.phases["cross_pollination"].status = PhaseStatus.COMPLETE
-        config = _make_config(synthesizer="codex-5.3-xhigh")
-
-        run_phase3(tmp_path, config, manifest)
-
-        mock_counselors.assert_called_once()
-        call_kwargs = mock_counselors.call_args
-        agents_arg = call_kwargs.kwargs.get("agents") or call_kwargs.args[1]
-        assert agents_arg == ["codex-5.3-xhigh"]
-        # Must NOT contain the research agents
-        for agent in AGENTS:
-            if agent != "codex-5.3-xhigh":
-                assert agent not in agents_arg
-
-
-# ---------------------------------------------------------------------------
-# 10. Pipeline end-to-end
+# 2. Pipeline end-to-end
 # ---------------------------------------------------------------------------
 
 
@@ -503,35 +153,25 @@ class TestRunPipeline:
 
 
 # ---------------------------------------------------------------------------
-# 11. Dry run
+# 3. Dry run
 # ---------------------------------------------------------------------------
 
 
 class TestDryRun:
-    @patch("ivory_tower.engine.run_counselors")
-    @patch("ivory_tower.engine.build_research_prompt")
-    def test_dry_run_does_not_call_counselors(
-        self, mock_build, mock_counselors, capsys
-    ):
-        """Dry run prints plan but does NOT call counselors."""
-        mock_build.return_value = "# Deep Research Task\n\nPrompt preview text here"
-
+    def test_dry_run_prints_plan_without_calling_counselors(self, capsys):
+        """Dry run delegates to strategy.dry_run() -- no network calls."""
         config = _make_config(dry_run=True)
         print_dry_run(config)
-
-        mock_counselors.assert_not_called()
 
         captured = capsys.readouterr()
         # Should mention agents and synthesizer
         for agent in AGENTS:
             assert agent in captured.out
         assert "claude-opus" in captured.out  # synthesizer
-        # Should show prompt preview (first 200 chars)
-        assert "Deep Research Task" in captured.out
 
 
 # ---------------------------------------------------------------------------
-# 12-15. Resume pipeline tests
+# 4. Resume pipeline tests
 # ---------------------------------------------------------------------------
 
 
