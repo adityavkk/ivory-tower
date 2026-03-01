@@ -60,6 +60,26 @@ class SynthesisPhase:
 
 
 @dataclass
+class SeedOptimizationResult:
+    status: PhaseStatus
+    judge: str
+    rounds_completed: int = 0
+    seed_score: float | None = None
+    final_score: float | None = None
+    output: str = ""
+    log: str = ""
+
+
+@dataclass
+class AdversarialOptimizationPhase:
+    status: PhaseStatus
+    started_at: str | None = None
+    completed_at: str | None = None
+    duration_seconds: float | None = None
+    seeds: dict[str, SeedOptimizationResult] = field(default_factory=dict)
+
+
+@dataclass
 class Flags:
     raw: bool = False
     instructions: str | None = None

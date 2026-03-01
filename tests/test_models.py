@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from ivory_tower.models import (
+    AdversarialOptimizationPhase,
     AgentResult,
     CrossPollinationPhase,
     CrossPollinationSession,
@@ -11,6 +12,7 @@ from ivory_tower.models import (
     Manifest,
     PhaseStatus,
     ResearchPhase,
+    SeedOptimizationResult,
     SynthesisPhase,
 )
 
@@ -274,3 +276,75 @@ class TestManifest:
         sess = cp2.sessions["claude-opus-cross-codex-5.3-xhigh"]
         assert sess.status is PhaseStatus.COMPLETE
         assert sess.duration_seconds == 200
+
+
+# --- PhaseStatus.PARTIAL ---
+
+
+class TestPhaseStatusPartial:
+    def test_partial_value(self):
+        assert PhaseStatus.PARTIAL.value == "partial"
+
+    def test_from_string(self):
+        assert PhaseStatus("partial") == PhaseStatus.PARTIAL
+
+
+# --- SeedOptimizationResult ---
+
+
+class TestSeedOptimizationResult:
+    def test_defaults(self):
+        r = SeedOptimizationResult(status=PhaseStatus.PENDING, judge="agent-b")
+        assert r.status == PhaseStatus.PENDING
+        assert r.judge == "agent-b"
+        assert r.rounds_completed == 0
+        assert r.seed_score is None
+        assert r.final_score is None
+        assert r.output == ""
+        assert r.log == ""
+
+    def test_with_values(self):
+        r = SeedOptimizationResult(
+            status=PhaseStatus.COMPLETE,
+            judge="agent-b",
+            rounds_completed=10,
+            seed_score=5.2,
+            final_score=8.3,
+            output="phase2/agent-a-optimized.md",
+            log="phase2/agent-a-optimization-log.json",
+        )
+        assert r.final_score == 8.3
+
+
+# --- AdversarialOptimizationPhase ---
+
+
+class TestAdversarialOptimizationPhase:
+    def test_defaults(self):
+        p = AdversarialOptimizationPhase(status=PhaseStatus.PENDING)
+        assert p.status == PhaseStatus.PENDING
+        assert p.seeds == {}
+
+    def test_with_seeds(self):
+        p = AdversarialOptimizationPhase(
+            status=PhaseStatus.RUNNING,
+            seeds={
+                "a": SeedOptimizationResult(status=PhaseStatus.RUNNING, judge="b"),
+                "b": SeedOptimizationResult(status=PhaseStatus.PENDING, judge="a"),
+            },
+        )
+        assert len(p.seeds) == 2
+        assert p.seeds["a"].judge == "b"
+
+
+# --- Flags.max_rounds ---
+
+
+class TestFlagsMaxRounds:
+    def test_default_max_rounds(self):
+        f = Flags()
+        assert f.max_rounds == 10
+
+    def test_custom_max_rounds(self):
+        f = Flags(max_rounds=5)
+        assert f.max_rounds == 5
