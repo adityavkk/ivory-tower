@@ -8,17 +8,25 @@ Orchestrates [counselors](https://github.com/anomalyco/counselors) to fan out re
 
 ### How it works
 
-```
-Phase 1: Research        Phase 2: Cross-Pollination       Phase 3: Synthesis
-+-----------+            +---------------------------+     +-------------+
-| Agent A   |--report--->| A reviews B's report      |---->|             |
-| Agent B   |--report--->| A reviews C's report      |     | Synthesizer |
-| Agent C   |--report--->| B reviews A's report      |---->| reads all   |
-|           |            | B reviews C's report      |     | refinements |
-| (parallel)|            | C reviews A's report      |---->|             |
-|           |            | C reviews B's report      |     | final-report|
-+-----------+            | (all concurrent)          |     +-------------+
-                         +---------------------------+
+```mermaid
+graph LR
+    subgraph "Phase 1: Research"
+        A[Agent A] --> rA[report A]
+        B[Agent B] --> rB[report B]
+        C[Agent C] --> rC[report C]
+    end
+    subgraph "Phase 2: Cross-Pollination"
+        rA & rB --> xAB[A reviews B]
+        rA & rC --> xAC[A reviews C]
+        rB & rA --> xBA[B reviews A]
+        rB & rC --> xBC[B reviews C]
+        rC & rA --> xCA[C reviews A]
+        rC & rB --> xCB[C reviews B]
+    end
+    subgraph "Phase 3: Synthesis"
+        xAB & xAC & xBA & xBC & xCA & xCB --> S[Synthesizer]
+        S --> F[final-report.md]
+    end
 ```
 
 Agents independently research a topic, then skeptically verify each other's findings through new web searches, then a single synthesizer produces the final report.
