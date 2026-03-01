@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import shutil
 import time
@@ -10,6 +11,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
+
+logger = logging.getLogger(__name__)
 
 from ivory_tower.counselors import run_counselors
 from ivory_tower.models import (
@@ -68,46 +71,187 @@ def _normalize_counselors_output(
 
 
 def _extract_json_from_markdown(text: str) -> str | None:
-    """Extract JSON from a markdown-fenced code block or raw JSON object."""
-    match = re.search(r'```(?:json)?\s*\n(.*?)\n\s*```', text, re.DOTALL)
-    if match:
-        return match.group(1).strip()
-    match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
-    if match:
-        return match.group(0).strip()
+    """Extract JSON from markdown text, trying multiple strategies.
+
+    Handles:
+    - Format A: Clean JSON on the full text (OpenAI agents)
+    - Format B: JSON in a ```json fenced code block (Anthropic agents)
+    - Format C: JSON in any ``` fenced code block
+    - Format D: Raw JSON object containing "overall_score" in the text
+    """
+    if not text or not text.strip():
+        return None
+
+    # Strategy 1: Try parsing the full text as JSON directly (Format A)
+    logger.debug("Trying JSON extraction strategy 1: full text as JSON")
+    stripped = text.strip()
+    try:
+        json.loads(stripped)
+        return stripped
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Strategy 2: Extract from ```json fenced code blocks (Format B)
+    logger.debug("Trying JSON extraction strategy 2: ```json fenced blocks")
+    # Try ALL matches (last one is often the valid JSON for Anthropic agents)
+    json_block_matches = re.findall(
+        r'```json\s*\n?(.*?)\n?\s*```', text, re.DOTALL
+    )
+    for candidate in reversed(json_block_matches):
+        candidate = candidate.strip()
+        if candidate:
+            try:
+                json.loads(candidate)
+                return candidate
+            except (json.JSONDecodeError, ValueError):
+                continue
+
+    # Strategy 3: Extract from any ``` fenced code block
+    logger.debug("Trying JSON extraction strategy 3: any fenced block")
+    any_block_matches = re.findall(
+        r'```\s*\n?(.*?)\n?\s*```', text, re.DOTALL
+    )
+    for candidate in reversed(any_block_matches):
+        candidate = candidate.strip()
+        if candidate:
+            try:
+                json.loads(candidate)
+                return candidate
+            except (json.JSONDecodeError, ValueError):
+                continue
+
+    # Strategy 4: Find a raw JSON object containing "overall_score"
+    logger.debug("Trying JSON extraction strategy 4: raw JSON with overall_score")
+    # Use a greedy match from { to the last } to handle nested objects
+    for match in re.finditer(r'\{[^{}]*"overall_score"[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL):
+        candidate = match.group(0).strip()
+        try:
+            json.loads(candidate)
+            return candidate
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+    # Strategy 5: Find any raw JSON object {...} and try to parse it
+    logger.debug("Trying JSON extraction strategy 5: any raw JSON object")
+    for match in re.finditer(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL):
+        candidate = match.group(0).strip()
+        try:
+            json.loads(candidate)
+            return candidate
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+    logger.warning("All JSON extraction strategies failed for text of length %d", len(text))
+    return None
+
+
+def _extract_score_from_text(text: str) -> float | None:
+    """Extract a score from natural language prose as a last-resort fallback.
+
+    Looks for patterns like:
+    - "Overall Score: 7.4/10"
+    - "overall_score: 7.4"
+    - "**Overall: 7/10**"
+    - "Overall ... 8.5 / 10"
+    """
+    if not text:
+        return None
+
+    patterns = [
+        # "overall_score: 7.4" or "overall_score : 7.4"
+        r'overall_score\s*:\s*(\d+\.?\d*)',
+        # "Overall Score: 7.4/10" or "Overall Score: 7.4 / 10"
+        r'[Oo]verall\s+[Ss]core\s*:\s*(\d+\.?\d*)\s*/\s*10',
+        # "**Overall: 7/10**" or "**Overall: 7.5/10**"
+        r'\*\*[Oo]verall\s*:\s*(\d+\.?\d*)\s*/\s*10\s*\*\*',
+        # "Overall ... 8.5/10" (more general)
+        r'[Oo]verall.*?(\d+\.?\d*)\s*/\s*10',
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            try:
+                score = float(match.group(1))
+                if 0.0 <= score <= 10.0:
+                    return score
+            except (ValueError, IndexError):
+                continue
+
     return None
 
 
 def parse_judge_output(judging_dir: Path) -> tuple[float, dict]:
     """Parse judge output from a counselors output directory.
 
-    Returns (score, asi_dict).
+    Reads ALL ``.md`` files recursively and tries multiple extraction strategies:
+
+    1. JSON extraction from each file (via ``_extract_json_from_markdown``)
+    2. Score extraction from natural language prose (via ``_extract_score_from_text``)
+    3. Returns raw text as ``critique`` so the proposer still gets feedback
+
+    Returns ``(score, asi_dict)``.
     """
     md_files = list(judging_dir.glob("**/*.md"))
     if not md_files:
+        logger.warning("No .md files found in %s", judging_dir)
         return 0.0, {"error": f"No output files found in {judging_dir}"}
 
-    raw_text = md_files[0].read_text()
-    json_str = _extract_json_from_markdown(raw_text)
-    if json_str is None:
-        json_str = raw_text.strip()
+    # Collect all raw text for fallback
+    all_texts: list[str] = []
+    for md_file in md_files:
+        try:
+            all_texts.append(md_file.read_text())
+        except OSError:
+            continue
 
-    try:
-        data = json.loads(json_str)
-    except (json.JSONDecodeError, TypeError):
-        return 0.0, {"error": "Failed to parse judge output as JSON", "raw_output": raw_text}
+    if not all_texts:
+        return 0.0, {"error": f"Could not read any files in {judging_dir}"}
 
-    score = float(data.get("overall_score", 0.0))
-    score = max(0.0, min(10.0, score))
+    # Strategy 1: Try JSON extraction from each file
+    for raw_text in all_texts:
+        json_str = _extract_json_from_markdown(raw_text)
+        if json_str is not None:
+            try:
+                data = json.loads(json_str)
+                if isinstance(data, dict) and "overall_score" in data:
+                    score = float(data.get("overall_score", 0.0))
+                    score = max(0.0, min(10.0, score))
 
-    asi = {
-        "dimensions": data.get("dimensions", {}),
-        "strengths": data.get("strengths", []),
-        "weaknesses": data.get("weaknesses", []),
-        "suggestions": data.get("suggestions", []),
-        "critique": data.get("critique", ""),
+                    asi = {
+                        "dimensions": data.get("dimensions", {}),
+                        "strengths": data.get("strengths", []),
+                        "weaknesses": data.get("weaknesses", []),
+                        "suggestions": data.get("suggestions", []),
+                        "critique": data.get("critique", ""),
+                    }
+                    logger.info("Judge score from %s: %.1f (JSON parsed)", judging_dir.name, score)
+                    return score, asi
+            except (json.JSONDecodeError, TypeError, ValueError):
+                logger.warning("JSON decode failed for candidate from %s", judging_dir.name)
+                continue
+
+    # Strategy 2: Try extracting score from natural language prose
+    logger.warning("No parseable JSON in %s, falling back to text extraction", judging_dir.name)
+    combined_text = "\n\n".join(all_texts)
+    prose_score = _extract_score_from_text(combined_text)
+    if prose_score is not None:
+        logger.info("Judge score from %s: %.1f (extracted from prose)", judging_dir.name, prose_score)
+        return prose_score, {
+            "dimensions": {},
+            "strengths": [],
+            "weaknesses": [],
+            "suggestions": [],
+            "critique": combined_text,
+        }
+
+    # Strategy 3: Return error but include raw text as critique for feedback
+    logger.warning("Could not extract any score from %s, returning 0.0", judging_dir.name)
+    return 0.0, {
+        "error": "Failed to parse judge output as JSON",
+        "raw_output": combined_text,
+        "critique": combined_text,
     }
-    return score, asi
 
 
 def extract_feedback_from_reflective_dataset(
@@ -452,6 +596,7 @@ class AdversarialStrategy:
 
     def _run_seed_generation(self, run_dir: Path, config: Any, manifest: Manifest) -> Manifest:
         """Phase 1: Both agents independently research the topic."""
+        logger.info("Phase 1: Starting seed generation with agents %s", config.agents)
         sg: ResearchPhase = manifest.phases["seed_generation"]
         sg.status = PhaseStatus.RUNNING
         sg.started_at = _now_iso()
@@ -488,6 +633,7 @@ class AdversarialStrategy:
                 output=f"phase1/{agent}-seed.md",
             )
 
+        logger.info("Phase 1: Seed generation complete (%.1fs)", elapsed)
         manifest.save(run_dir / "manifest.json")
         return manifest
 
@@ -526,6 +672,7 @@ class AdversarialStrategy:
 
         def optimize_seed(agent: str, judge: str) -> None:
             """Optimize one agent's seed report."""
+            logger.info("Starting optimization for %s (judge: %s, max_rounds: %d)", agent, judge, max_rounds)
             seed_file = phase1_dir / f"{agent}-seed.md"
             seed_text = seed_file.read_text()
 
@@ -562,17 +709,40 @@ class AdversarialStrategy:
 
                 # Save judge output as readable file
                 judge_md = judging_dir / f"round-{round_num:02d}-{judge}-judges-{agent}.md"
+                judge_text = None
                 try:
                     judge_text = read_counselors_output(round_dir, judge)
                     judge_md.write_text(judge_text)
                 except FileNotFoundError:
                     pass
 
+                # If ASI has an error key (JSON parsing failed), ensure the
+                # raw judge prose is stuffed into critique so the proposer
+                # still gets natural-language feedback (Fix 3).
+                if "error" in asi and not asi.get("critique"):
+                    if judge_text:
+                        asi["critique"] = judge_text
+                    else:
+                        # Try reading all md files as fallback
+                        md_files = list(round_dir.glob("**/*.md"))
+                        texts = []
+                        for f in md_files:
+                            try:
+                                texts.append(f.read_text())
+                            except OSError:
+                                pass
+                        if texts:
+                            asi["critique"] = "\n\n".join(texts)
+
                 # Track seed score on first round
                 if round_num == 1:
                     seed_result.seed_score = score
 
                 seed_result.rounds_completed = round_num
+
+                logger.info("[%s] Round %d: score=%.1f", agent, round_num, score)
+                if score == 0.0:
+                    logger.warning("[%s] Round %d returned score 0.0 -- judge output may have failed to parse", agent, round_num)
 
                 return score, asi
 
@@ -582,6 +752,7 @@ class AdversarialStrategy:
                 components_to_update: list[str],
             ) -> dict[str, str]:
                 """Send feedback to original agent to produce improved report."""
+                logger.info("[%s] Proposer called for round %d", agent, seed_result.rounds_completed + 1)
                 feedback = extract_feedback_from_reflective_dataset(
                     reflective_dataset if isinstance(reflective_dataset, dict) else {}
                 )
@@ -614,10 +785,10 @@ class AdversarialStrategy:
                 return {"report": improved_text}
 
             # No-op LM stub: GEPA defaults reflection_lm to "openai/gpt-5.1"
-            # (a string), which triggers ``make_litellm_lm()`` →
+            # (a string), which triggers ``make_litellm_lm()`` ->
             # ``import litellm`` even when a custom_candidate_proposer fully
             # replaces the LLM reflection path.  Passing a callable skips the
-            # string→LM conversion entirely, avoiding the litellm dependency.
+            # string->LM conversion entirely, avoiding the litellm dependency.
             def _unused_lm(prompt):  # pragma: no cover
                 raise RuntimeError("reflection_lm should never be called when custom_candidate_proposer is set")
 
@@ -661,9 +832,20 @@ class AdversarialStrategy:
 
                 # Save optimization log
                 self._save_optimization_log(run_dir, agent, result)
+                logger.info("Optimization complete for %s: best_score=%s, rounds=%s",
+                            agent, best_score, getattr(result, "total_metric_calls", "?"))
+
+                # Fix 6: Warn when optimization produced no improvement
+                if best_score is not None and seed_result.seed_score is not None:
+                    if best_score == seed_result.seed_score == 0.0:
+                        logger.warning(
+                            "[%s] Optimization ended with seed_score=0.0 and final_score=0.0 -- "
+                            "judge output likely failed to parse in all rounds", agent
+                        )
 
             except Exception:
                 # Graceful degradation: fall back to seed
+                logger.error("Optimization failed for %s, falling back to seed", agent, exc_info=True)
                 seed_result.status = PhaseStatus.PARTIAL
                 optimized_file = phase2_dir / f"{agent}-optimized.md"
                 if not optimized_file.exists():
@@ -706,6 +888,7 @@ class AdversarialStrategy:
 
     def _run_synthesis(self, run_dir: Path, config: Any, manifest: Manifest) -> Manifest:
         """Phase 3: Synthesize both optimized reports."""
+        logger.info("Phase 3: Starting synthesis with %s", config.synthesizer)
         sp: SynthesisPhase = manifest.phases["synthesis"]
         sp.status = PhaseStatus.RUNNING
         sp.started_at = _now_iso()
@@ -731,8 +914,17 @@ class AdversarialStrategy:
         report_a = _read_report(agent_a)
         report_b = _read_report(agent_b)
 
-        score_a = opt.seeds[agent_a].final_score or opt.seeds[agent_a].seed_score or 0.0
-        score_b = opt.seeds[agent_b].final_score or opt.seeds[agent_b].seed_score or 0.0
+        score_a = opt.seeds[agent_a].final_score or opt.seeds[agent_a].seed_score
+        score_b = opt.seeds[agent_b].final_score or opt.seeds[agent_b].seed_score
+
+        # Fix 8: If scores are 0.0 (likely parse failure), pass None so the
+        # synthesis prompt can omit misleading "scored 0.0/10" text.
+        if score_a == 0.0:
+            logger.warning("Agent %s has score 0.0 -- likely a judge parse failure, omitting from synthesis prompt", agent_a)
+            score_a = None
+        if score_b == 0.0:
+            logger.warning("Agent %s has score 0.0 -- likely a judge parse failure, omitting from synthesis prompt", agent_b)
+            score_b = None
 
         prompt_text = build_adversarial_synthesis_prompt(
             topic=config.topic,
@@ -767,6 +959,7 @@ class AdversarialStrategy:
         sp.completed_at = _now_iso()
         sp.duration_seconds = elapsed
 
+        logger.info("Phase 3: Synthesis complete (%.1fs)", elapsed)
         manifest.save(run_dir / "manifest.json")
         return manifest
 
