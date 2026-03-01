@@ -170,6 +170,21 @@ def _extract_json_from_markdown(text: str) -> str | None:
     except (json.JSONDecodeError, ValueError):
         pass
 
+    # Strategy 1b: Repair common JSON malformations from LLM output.
+    # Some agents produce multi-paragraph critique as:
+    #   "critique":"paragraph 1" ,"paragraph 2"}
+    # which is invalid JSON (the second " terminates the string too early).
+    # Fix by merging split string fragments:  " ," -> \\n\\n
+    if stripped.startswith("{") and stripped.endswith("}"):
+        repaired = re.sub(r'" ,"', r'\\n\\n', stripped)
+        if repaired != stripped:
+            try:
+                json.loads(repaired)
+                logger.debug("JSON repair succeeded (merged split string fragments)")
+                return repaired
+            except (json.JSONDecodeError, ValueError):
+                pass
+
     # Strategy 2: Extract from ```json fenced code blocks (Format B)
     logger.debug("Trying JSON extraction strategy 2: ```json fenced blocks")
     # Try ALL matches (last one is often the valid JSON for Anthropic agents)
