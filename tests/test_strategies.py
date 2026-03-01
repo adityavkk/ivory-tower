@@ -273,8 +273,8 @@ class TestCouncilDryRun:
         )
         s.dry_run(config)
         captured = capsys.readouterr()
-        # 3 agents = 6 cross-pollination sessions
-        assert "6" in captured.out
+        # 3 agents = 3 refinement sessions (one per agent)
+        assert "3 agents refine reports" in captured.out
 
 
 class TestCouncilFormatStatus:

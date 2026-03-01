@@ -103,13 +103,13 @@ class TestCreateInitialManifest:
         cp = m.phases["cross_pollination"]
         assert isinstance(cp, CrossPollinationPhase)
         assert cp.status is PhaseStatus.PENDING
-        # Sessions pre-populated for all N*(N-1) pairs
-        assert len(cp.sessions) == 2  # 2 agents => 2*(2-1)=2 sessions
-        assert "claude-opus-cross-codex-5.3-xhigh" in cp.sessions
-        assert "codex-5.3-xhigh-cross-claude-opus" in cp.sessions
-        sess = cp.sessions["claude-opus-cross-codex-5.3-xhigh"]
+        # Sessions pre-populated: one per agent (each reviews all peers)
+        assert len(cp.sessions) == 2  # 2 agents => 2 sessions
+        assert "claude-opus-refined" in cp.sessions
+        assert "codex-5.3-xhigh-refined" in cp.sessions
+        sess = cp.sessions["claude-opus-refined"]
         assert sess.status is PhaseStatus.PENDING
-        assert sess.output == "phase2/claude-opus-cross-codex-5.3-xhigh.md"
+        assert sess.output == "phase2/claude-opus-refined.md"
 
         # Synthesis phase
         sp = m.phases["synthesis"]
@@ -135,11 +135,9 @@ class TestCreateInitialManifest:
         )
         cp = m.phases["cross_pollination"]
         assert isinstance(cp, CrossPollinationPhase)
-        # 3 agents => 3*2 = 6 sessions
-        assert len(cp.sessions) == 6
+        # 3 agents => 3 sessions (one per agent)
+        assert len(cp.sessions) == 3
         expected_keys = {
-            "a-cross-b", "a-cross-c",
-            "b-cross-a", "b-cross-c",
-            "c-cross-a", "c-cross-b",
+            "a-refined", "b-refined", "c-refined",
         }
         assert set(cp.sessions.keys()) == expected_keys

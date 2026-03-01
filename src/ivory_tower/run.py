@@ -50,17 +50,14 @@ def create_initial_manifest(
         for agent in agents
     }
 
-    # Cross-pollination: N*(N-1) sessions
+    # Cross-pollination: N sessions (one per agent, each reviews all peers)
     sessions: dict[str, CrossPollinationSession] = {}
     for agent in agents:
-        for peer in agents:
-            if agent == peer:
-                continue
-            key = f"{agent}-cross-{peer}"
-            sessions[key] = CrossPollinationSession(
-                status=PhaseStatus.PENDING,
-                output=f"phase2/{key}.md",
-            )
+        key = f"{agent}-refined"
+        sessions[key] = CrossPollinationSession(
+            status=PhaseStatus.PENDING,
+            output=f"phase2/{key}.md",
+        )
 
     return Manifest(
         run_id=run_id,
