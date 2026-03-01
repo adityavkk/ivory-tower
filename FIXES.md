@@ -180,9 +180,9 @@ Issue 16 (debug logging)
 
 ## Context for subagent
 
-**Worktree:** `/Users/auk000v/dev/tools/ivory-tower-fixes` on branch `fix/adversarial-strategy`
+**IMPORTANT: ALL work MUST happen in the git worktree at `/Users/auk000v/dev/tools/ivory-tower-fixes`.** Do NOT read, write, or run commands in `/Users/auk000v/dev/tools/ivory-tower` (that is the main worktree on `main` branch). Every file path, every `uv run pytest`, every `git commit`, every `git push` must use `/Users/auk000v/dev/tools/ivory-tower-fixes` as the working directory. This worktree is on branch `fix/adversarial-strategy`.
 
-**Key files:**
+**Key files (all paths relative to `/Users/auk000v/dev/tools/ivory-tower-fixes`):**
 - `src/ivory_tower/strategies/adversarial.py` -- all fix targets
 - `src/ivory_tower/prompts.py` -- prompt templates (no changes needed for these fixes)
 - `src/ivory_tower/counselors.py` -- counselors CLI wrapper (read-only reference)
@@ -205,8 +205,8 @@ Issue 16 (debug logging)
 
 The `{agent}.md` is the agent's conversational output. The REAL report may be in a separate file like `research_report.md` or `improved_research_report.md`. The heuristic to find the real report: pick the largest `.md` file excluding `prompt.md`, `summary.md`, and `run.json`.
 
-**Test commands:**
+**Test commands (run from `/Users/auk000v/dev/tools/ivory-tower-fixes`):**
 - Mocked: `uv run pytest tests/ -x -v` (should see 194 passed)
 - Live adversarial: `uv run pytest tests/test_live_e2e.py -m live -k adversarial -v -s` (5-10 min)
 
-**After each fix:** commit with a descriptive message and `git push`.
+**After each fix:** commit with a descriptive message and `git push`. All git commands must run in `/Users/auk000v/dev/tools/ivory-tower-fixes`.
