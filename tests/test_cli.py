@@ -74,9 +74,9 @@ class TestHelp:
 
 class TestResearchErrors:
     @patch("ivory_tower.cli.sys")
-    @patch("ivory_tower.cli.check_counselors_installed", return_value=True)
+    @patch("ivory_tower.cli.resolve_counselors_cmd", return_value=["counselors"])
     @patch("ivory_tower.cli.list_available_agents", return_value=AVAILABLE_AGENTS)
-    def test_research_no_topic_errors(self, mock_list, mock_check, mock_sys):
+    def test_research_no_topic_errors(self, mock_list, mock_resolve, mock_sys):
         """No positional, no --file, isatty=True -> exit 1."""
         mock_sys.stdin.isatty.return_value = True
         result = runner.invoke(app, [
@@ -113,9 +113,9 @@ class TestResearchSuccess:
     @patch("ivory_tower.cli.run_pipeline")
     @patch("ivory_tower.cli.validate_agents", return_value=[])
     @patch("ivory_tower.cli.list_available_agents", return_value=AVAILABLE_AGENTS)
-    @patch("ivory_tower.cli.check_counselors_installed", return_value=True)
+    @patch("ivory_tower.cli.resolve_counselors_cmd", return_value=["counselors"])
     def test_research_from_file(
-        self, mock_check, mock_list, mock_validate, mock_pipeline, tmp_path
+        self, mock_resolve, mock_list, mock_validate, mock_pipeline, tmp_path
     ):
         """Topic loaded from --file."""
         topic_file = tmp_path / "topic.txt"
@@ -142,9 +142,9 @@ class TestResearchSuccess:
     @patch("ivory_tower.cli.run_pipeline")
     @patch("ivory_tower.cli.validate_agents", return_value=[])
     @patch("ivory_tower.cli.list_available_agents", return_value=AVAILABLE_AGENTS)
-    @patch("ivory_tower.cli.check_counselors_installed", return_value=True)
+    @patch("ivory_tower.cli.resolve_counselors_cmd", return_value=["counselors"])
     def test_research_dry_run(
-        self, mock_check, mock_list, mock_validate, mock_pipeline, mock_dry_run
+        self, mock_resolve, mock_list, mock_validate, mock_pipeline, mock_dry_run
     ):
         """--dry-run calls print_dry_run, not run_pipeline."""
         result = runner.invoke(app, [
