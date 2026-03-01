@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from ivory_tower.strategies.base import ResearchStrategy
 from ivory_tower.strategies.council import CouncilStrategy
+from ivory_tower.strategies.adversarial import AdversarialStrategy
 
 STRATEGIES: dict[str, type] = {
     "council": CouncilStrategy,
+    "adversarial": AdversarialStrategy,
 }
 
 
