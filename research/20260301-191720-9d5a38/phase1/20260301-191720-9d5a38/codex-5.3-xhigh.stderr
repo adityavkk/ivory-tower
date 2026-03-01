@@ -1,0 +1,716 @@
+2026-03-01T19:17:21.091288Z ERROR codex_core::codex: failed to load skill /Users/auk000v/.claude/skills/pr-reviewer/SKILL.md: invalid YAML: block sequence entries are not allowed in this context at line 12 column 17
+2026-03-01T19:17:21.091307Z ERROR codex_core::codex: failed to load skill /Users/auk000v/.claude/skills/show-toast/SKILL.md: invalid YAML: mapping values are not allowed in this context at line 13 column 105
+2026-03-01T19:17:21.091309Z ERROR codex_core::codex: failed to load skill /Users/auk000v/.claude/skills/file-validator/SKILL.md: invalid YAML: block sequence entries are not allowed in this context at line 12 column 17
+2026-03-01T19:17:21.091310Z ERROR codex_core::codex: failed to load skill /Users/auk000v/.claude/skills/bigquery-explorer/SKILL.md: invalid YAML: block sequence entries are not allowed in this context at line 12 column 18
+OpenAI Codex v0.106.0 (research preview)
+--------
+workdir: /Users/auk000v/dev/tools/ivory-tower
+model: gpt-5.3-codex
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: xhigh
+reasoning summaries: none
+session id: 019caad5-735a-7f30-819d-1080194bc204
+--------
+user
+Read the file at /Users/auk000v/dev/tools/ivory-tower/research/20260301-191720-9d5a38/phase1/20260301-191720-9d5a38/prompt.md and follow the instructions within it.
+mcp startup: no servers
+
+thinking
+**Acknowledging user file read request**
+codex
+I’m going to open the `prompt.md` you pointed to, extract its exact instructions, and then execute them step by step in this workspace. I’ll start by reading that file now.
+exec
+/bin/zsh -lc 'cat /Users/auk000v/dev/tools/ivory-tower/research/20260301-191720-9d5a38/phase1/20260301-191720-9d5a38/prompt.md' in /Users/auk000v/dev/tools/ivory-tower succeeded in 51ms:
+# Deep Research Task
+
+## Topic
+How can I use Harbor (https://github.com/av/harbor) and inspect-harbor (the Inspect AI integration/bridge for Harbor) to build a general-purpose eval runner that can run different agent solvers against different benchmarks like Spider2, LongMemEval, and others? Specifically research: (1) Harbor's architecture - how it orchestrates agent backends, services, and eval tasks; (2) inspect-harbor's role as the bridge between Inspect AI's eval framework and Harbor's service management; (3) how to define and register new agent solvers (e.g. wrapping a custom agent as a Harbor-compatible solver); (4) how to define and register new benchmarks/datasets (e.g. integrating Spider2 and LongMemEval task suites); (5) the eval execution pipeline - how Harbor manages the lifecycle of running a solver against a benchmark; (6) practical architecture for a general-purpose eval runner that can mix-and-match solvers and benchmarks; (7) existing examples and patterns from Harbor's built-in eval support; (8) gaps, limitations, and areas where custom engineering would be needed.
+
+## Methodology
+- Use web search extensively to find current, authoritative sources
+- Prefer primary sources (papers, official docs, original announcements) over secondary commentary
+- Check publication dates -- prefer sources from the last 2 years where relevant
+- When making claims, note your source
+- If you find contradictory information, present both sides with sources
+
+## Output Requirements
+- Write a comprehensive research report
+- Include a Sources section with URLs at the end
+- Note gaps in your research -- areas where you couldn't find solid information
+
+thinking
+**Planning extensive web research**
+codex
+I’ve loaded the task brief and will now gather primary sources from Harbor, inspect-harbor, and Inspect AI docs first, then benchmark docs for Spider2 and LongMemEval.
+🌐 Searching the web...
+🌐 Searched: av harbor github README architecture services agents evals
+
+thinking
+**Refining search strategy**
+codex
+I have Inspect core docs loaded; next I’m pulling Harbor and inspect-harbor repositories directly from GitHub to map actual architecture and integration points.
+🌐 Searching the web...
+🌐 Searched: github.com/av/harbor
+
+thinking
+**Searching for inspect-harbor repo**
+codex
+I found Harbor’s main repo and wiki; I’m now drilling into the inspect-harbor package/repo and Harbor’s eval-related code paths (especially Harbor Bench) to map the actual pipeline.
+🌐 Searching the web...
+🌐 Searched: github inspect-harbor repository
+
+thinking
+**Investigating harbor package location**
+🌐 Searching the web...
+🌐 Searched: https://github.com/av/harbor
+
+thinking
+**Planning architecture and inspection review**
+🌐 Searching the web...
+🌐 Searched: 'inspect' in https://github.com/av/harbor
+
+thinking
+**Inspecting specific document ID**
+🌐 Searching the web...
+🌐 Searched: https://github.com/av/harbor/wiki/5.1.-Harbor-Bench
+
+thinking
+**Planning repo inspection approach**
+🌐 Searching the web...
+🌐 Searched: site:github.com/av/harbor "inspect_harbor"
+
+thinking
+**Testing GitHub raw URL access**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Searching for hidden repo**
+🌐 Searching the web...
+🌐 Searched: site:github.com "inspect-harbor" "github.com"
+
+thinking
+**Inspecting local research directory**
+codex
+I’m hitting noisy web indexing for `inspect-harbor`, so I’m switching to direct source retrieval: Harbor docs/code and package metadata/wheels for inspect-harbor to extract the bridge implementation details accurately.
+exec
+/bin/zsh -lc 'ls -la /Users/auk000v/dev/tools/ivory-tower/research/20260301-191720-9d5a38/phase1/20260301-191720-9d5a38' in /Users/auk000v/dev/tools/ivory-towerexec
+/bin/zsh -lc 'rg --files /Users/auk000v/dev/tools/ivory-tower/research/20260301-191720-9d5a38/phase1/20260301-191720-9d5a38' in /Users/auk000v/dev/tools/ivory-tower succeeded in 51ms:
+total 24
+drwxr-xr-x  6 auk000v  staff   192 Mar  1 14:17 .
+drwxr-xr-x  3 auk000v  staff    96 Mar  1 14:17 ..
+-rw-r--r--  1 auk000v  staff     0 Mar  1 14:17 amp-deep.md
+-rw-r--r--  1 auk000v  staff   207 Mar  1 14:17 amp-deep.stats.json
+-rw-r--r--  1 auk000v  staff   144 Mar  1 14:17 amp-deep.stderr
+-rw-r--r--  1 auk000v  staff  1669 Mar  1 14:17 prompt.md
+ succeeded in 52ms:
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-191720-9d5a38/phase1/20260301-191720-9d5a38/amp-deep.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-191720-9d5a38/phase1/20260301-191720-9d5a38/amp-deep.stderr
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-191720-9d5a38/phase1/20260301-191720-9d5a38/prompt.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-191720-9d5a38/phase1/20260301-191720-9d5a38/amp-deep.stats.json
+
+thinking
+**Reviewing research notes and error logs**
+exec
+/bin/zsh -lc "cat /Users/auk000v/dev/tools/ivory-tower/research/20260301-191720-9d5a38/phase1/20260301-191720-9d5a38/amp-deep.md | sed -n '1,160p'" in /Users/auk000v/dev/tools/ivory-towerexec
+/bin/zsh -lc 'cat /Users/auk000v/dev/tools/ivory-tower/research/20260301-191720-9d5a38/phase1/20260301-191720-9d5a38/amp-deep.stderr' in /Users/auk000v/dev/tools/ivory-tower succeeded in 51ms:
+
+ succeeded in 50ms:
+Error: 403 You must have a valid payment method on file before using this model. Add a payment method at https://ampcode.com/pay and try again.
+
+
+
+
+thinking
+**Searching package availability**
+thinking
+**Accessing documentation page**
+thinking
+**Searching for project URLs**
+thinking
+**Planning to open near metadata lines**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Clarifying reference ID usage**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Switching to direct URL open**
+🌐 Searching the web...
+🌐 Searched: https://pypi.org/project/inspect-harbor/
+
+thinking
+**Accessing source code link**
+🌐 Searching the web...
+🌐 Searched: https://github.com/meridianlabs-ai/inspect_harbor
+
+thinking
+**Inspecting source folder contents**
+🌐 Searching the web...
+🌐 Searched: https://github.com/meridianlabs-ai/inspect_harbor/tree/main/src/inspect_harbor
+
+thinking
+**Switching to GitHub API for files**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Planning URL-restricted search query**
+🌐 Searching the web...
+🌐 Searched: raw.githubusercontent.com meridianlabs-ai inspect_harbor src/inspect_harbor
+
+thinking
+**Exploring file links for raw source**
+🌐 Searching the web...
+🌐 Searched: https://github.com/meridianlabs-ai/inspect_harbor/blob/main/pyproject.toml
+
+thinking
+**Considering source retrieval options**
+codex
+I can see the `inspect-harbor` metadata and docs, but GitHub’s rendered pages are partially blocked in this browser. I’m now trying package-source retrieval (sdist/wheel) to inspect the bridge code paths directly.
+
+thinking
+**Using inline Python to avoid temp files**
+exec
+/bin/zsh -lc "python -c \"import urllib.request,json;d=json.load(urllib.request.urlopen('https://pypi.org/pypi/inspect-harbor/json',timeout=20));print(d['info']['version']);print(d['urls'][0]['url'])\"" in /Users/auk000v/dev/tools/ivory-tower exited 127 in 52ms:
+zsh:1: command not found: python
+
+thinking
+**Checking Python3 availability**
+exec
+/bin/zsh -lc "python3 -c \"import urllib.request,json;d=json.load(urllib.request.urlopen('https://pypi.org/pypi/inspect-harbor/json',timeout=20));print(d['info']['version']);print(d['urls'][0]['url'])\"" in /Users/auk000v/dev/tools/ivory-tower exited 1 in 695ms:
+Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/urllib/request.py", line 1346, in do_open
+    h.request(req.get_method(), req.selector, req.data, headers,
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/http/client.py", line 1257, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/http/client.py", line 1303, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/http/client.py", line 1252, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/http/client.py", line 1012, in _send_output
+    self.send(msg)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/http/client.py", line 952, in send
+    self.connect()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/http/client.py", line 1419, in connect
+    super().connect()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/http/client.py", line 923, in connect
+    self.sock = self._create_connection(
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/socket.py", line 822, in create_connection
+    for res in getaddrinfo(host, port, 0, SOCK_STREAM):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/socket.py", line 953, in getaddrinfo
+
+
+
+
+thinking
+**Planning detailed architecture inspection**
+thinking
+**Reviewing docs pages for structure**
+thinking
+**Analyzing harbor page architecture terms**
+thinking
+**Planning multi-pattern search**
+🌐 Searching the web...
+🌐 Searched: 'Service'
+
+
+thinking
+**Reassessing reference persistence**
+thinking
+**Exploring URL handling with varied linenos**
+🌐 Searching the web...
+🌐 Searched the web
+
+
+thinking
+**Planning URL lookup by query**
+thinking
+**Testing multiple line numbers**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Analyzing reference validity across calls**
+🌐 Searching the web...
+🌐 Searched: https://harborframework.com/docs/getting-started/understanding-harbor/
+
+thinking
+**Clarifying repository origin and architecture**
+codex
+I’ve confirmed Harbor’s current public docs/repo are under `harborframework` / `laude-institute/harbor` (not `av/harbor` in current indexing). I’m now extracting specific interfaces and lifecycle details from docs and source references for agents, datasets, and jobs.
+🌐 Searching the web...
+🌐 Searched: github laude-institute harbor BaseAgent BaseInstalledAgent
+
+thinking
+**Evaluating docs access via search snippets**
+🌐 Searching the web...
+🌐 Searched: https://harborframework.com/docs/agents
+
+thinking
+**Exploring decorator API docs**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Searching exact documentation URLs**
+codex
+I’m now switching to the `inspect-harbor` documentation pages directly (API reference) to capture exactly how custom Harbor-backed solvers and tasks are registered inside Inspect AI.
+🌐 Searching the web...
+🌐 Searched: https://inspect-harbor.readthedocs.io/en/latest/
+
+
+thinking
+**Considering alternative readthedocs search**
+thinking
+**Planning detailed doc page access**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Reevaluating search and open usage**
+codex
+I located the ReadTheDocs pages, but this browser’s ref resolution is unstable between calls. I’m using targeted page-level queries next to extract concrete API behavior (decorators, eval set helper, and package modules) from those docs.
+🌐 Searching the web...
+🌐 Searched: inspect-harbor harbor_solver decorator inspect ai integration
+
+thinking
+**Locating benchmark sources**
+🌐 Searching the web...
+🌐 Searched: Spider 2.0 benchmark official website GitHub dataset format
+
+thinking
+**Planning source retrieval**
+🌐 Searching the web...
+🌐 Searched: inspect_harbor.solver harbor_solver source code
+
+thinking
+**Exploring source URL usage from PyPI**
+🌐 Searching the web...
+🌐 Searched: https://github.com/meridianlabs-ai/inspect_harbor
+
+thinking
+**Adjusting domain scope inside queries**
+🌐 Searching the web...
+🌐 Searched: https://github.com/meridianlabs-ai/inspect_harbor
+
+thinking
+**Evaluating AV/Harbor architecture sources**
+🌐 Searching the web...
+🌐 Searched: https://github.com/av/harbor/wiki/Configuration
+
+thinking
+**Identifying additional architecture pages**
+🌐 Searching the web...
+🌐 Searched: site:github.com/av/harbor/wiki Architecture services docker-compose templates
+
+thinking
+**Searching service architecture**
+🌐 Searching the web...
+🌐 Searched: site:github.com/av/harbor/wiki 4. Harbor Services
+
+thinking
+**Attempting to locate inspect_harbor source**
+
+
+
+
+
+
+
+
+
+
+thinking
+**Planning source code retrieval**
+thinking
+**Planning source inspection approach**
+thinking
+**Exploring PyPI download link extraction**
+thinking
+**Considering source tarball option**
+thinking
+**Planning detailed docs exploration**
+thinking
+**Testing multiple reference open calls**
+thinking
+**Planning data fetching for other pages**
+thinking
+**Reviewing job configurations and website files**
+thinking
+**Searching docs for agent definitions**
+thinking
+**Exploring agent attribute docs**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Testing combined search and open call**
+🌐 Searching the web...
+🌐 Searched: https://harborframework.com/docs/concepts/agents
+
+thinking
+**Planning snippet-based doc extraction**
+🌐 Searching the web...
+🌐 Searched: inspect-harbor harbor_solver harbor_task harbor_eval_set
+
+thinking
+**Planning targeted doc queries**
+🌐 Searching the web...
+🌐 Searched: https://harborframework.com/docs/integrations/inspect-ai
+
+thinking
+**Planning hybrid search and open strategy**
+🌐 Searching the web...
+🌐 Searched: harborframework.com/docs/integrations/inspect-ai
+
+
+thinking
+**Reattempting integration page access**
+thinking
+**Exploring line-specific views**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Adjusting reference approach**
+🌐 Searching the web...
+🌐 Searched: site:harborframework.com/docs/integrations/inspect-ai harbor_task
+
+thinking
+**Distinguishing two Harbor projects**
+🌐 Searching the web...
+🌐 Searched: site:github.com/av/harbor/wiki/ Configuration av harbor
+
+thinking
+**Searching for detailed architecture**
+🌐 Searching the web...
+🌐 Searched: site:github.com/av/harbor/wiki/1.-Harbor-User-Guide
+
+thinking
+**Exploring services architecture**
+🌐 Searching the web...
+🌐 Searched: site:github.com/av/harbor/wiki/4.-Harbor-Services
+
+thinking
+**Testing URL fetch with line number**
+🌐 Searching the web...
+🌐 Searched: https://pypi.org/project/inspect-harbor/
+
+thinking
+**Continuing source extraction past line 350**
+🌐 Searching the web...
+🌐 Searched: https://pypi.org/project/inspect-harbor/
+
+thinking
+**Assessing line range for decorators**
+🌐 Searching the web...
+🌐 Searched: https://pypi.org/project/inspect-harbor/
+
+thinking
+**Exploring line-linked integration page URLs**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Testing URL search for safety**
+🌐 Searching the web...
+🌐 Searched: "https://harborframework.com/docs/integrations/inspect-ai"
+
+thinking
+**Testing alternative search queries**
+🌐 Searching the web...
+🌐 Searched: site:harborframework.com/docs/integrations inspect ai
+
+thinking
+**Planning custom decorator search**
+codex
+I’ve extracted strong primary data from `inspect-harbor`’s PyPI README (including concept mapping and parameters). Next I’m targeting Meridian Labs docs/API pages to capture decorator-level extension patterns (`harbor_task`, custom solver registration).
+🌐 Searching the web...
+🌐 Searched: site:meridianlabs-ai.github.io inspect-harbor harbor_task
+
+thinking
+**Searching GitHub for package repo**
+🌐 Searching the web...
+🌐 Searched: github.com/meridianlabs-ai/inspect_harbor
+
+thinking
+**Adjusting query domain placement**
+🌐 Searching the web...
+🌐 Searched: github.com/meridianlabs-ai/inspect_harbor
+
+thinking
+**Testing URL search for provenance**
+🌐 Searching the web...
+🌐 Searched: meridianlabs-ai/inspect_harbor@f2cc9c540b22fefd180e35a951fd52a552bec70d
+
+thinking
+**Testing combined open-and-click action**
+🌐 Searching the web...
+🌐 Searched: https://pypi.org/project/inspect-harbor/
+
+thinking
+**Testing separate click call approach**
+🌐 Searching the web...
+🌐 Searched: https://github.com/meridianlabs-ai/inspect_harbor
+
+thinking
+**Inspecting source link navigation**
+🌐 Searching the web...
+🌐 Searched: https://github.com/meridianlabs-ai/inspect_harbor/tree/main/src/inspect_harbor
+
+thinking
+**Testing safe file access strategies**
+🌐 Searching the web...
+🌐 Searched: https://github.com/meridianlabs-ai/inspect_harbor/blob/main/REGISTRY.md
+
+thinking
+**Testing raw content access**
+🌐 Searching the web...
+🌐 Searched: https://github.com/meridianlabs-ai/inspect_harbor/blob/main/README.md?plain=1
+
+thinking
+**Testing raw GitHub URL access**
+🌐 Searching the web...
+🌐 Searched: https://raw.githubusercontent.com/meridianlabs-ai/inspect_harbor/main/README.md
+
+thinking
+**Accessing core modules via raw URLs**
+🌐 Searching the web...
+🌐 Searched: https://raw.githubusercontent.com/meridianlabs-ai/inspect_harbor/main/src/inspect_harbor/__init__.py
+
+thinking
+**Planning multi-file inspection**
+codex
+I now have direct access to `inspect_harbor` source via `raw.githubusercontent.com`. Next I’m extracting the core bridge internals (`_task`, `_scorer`, converters, and task registry generation) so the architecture section is grounded in implementation details, not just README claims.
+🌐 Searching the web...
+🌐 Searched: https://raw.githubusercontent.com/meridianlabs-ai/inspect_harbor/main/src/inspect_harbor/harbor/_scorer.py
+
+thinking
+**Locating tasks module**
+🌐 Searching the web...
+🌐 Searched: https://raw.githubusercontent.com/meridianlabs-ai/inspect_harbor/main/src/inspect_harbor/tasks.py
+
+thinking
+**Checking missing script necessity**
+🌐 Searching the web...
+🌐 Searched: https://raw.githubusercontent.com/meridianlabs-ai/inspect_harbor/main/scripts/generate_tasks.py
+
+thinking
+**Planning efficient web queries**
+🌐 Searching the web...
+🌐 Searched: Spider 2.0 benchmark GitHub
+
+thinking
+**Clarifying inspect-harbor API discrepancies**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Deciding safe API call to list files**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Planning final documentation queries**
+🌐 Searching the web...
+🌐 Searched: inspect_ai task decorator reference
+
+thinking
+**Revalidating domain queries**
+🌐 Searching the web...
+🌐 Searched: inspect_ai task decorator reference
+
+thinking
+**Planning final registry check**
+🌐 Searching the web...
+🌐 Searched: https://raw.githubusercontent.com/meridianlabs-ai/inspect_harbor/main/REGISTRY.md
+
+thinking
+**Summarizing comprehensive Harbor research**
+codex
+## Research Report: Harbor + inspect-harbor for a General-Purpose Eval Runner (as of March 1, 2026)
+
+### Executive Summary
+There are two different “Harbor” projects in play, and this is the main architectural decision point:
+
+1. `av/harbor` is a Docker-based local LLM service orchestrator (backends/frontends/satellites, profiles, tunnels, etc.).
+2. `laude-institute/harbor` (Harbor Framework) is an eval/task framework (tasks/datasets/agents/trials/jobs).
+
+`inspect-harbor` (PyPI `inspect-harbor`, repo `meridianlabs-ai/inspect_harbor`) integrates with the **Harbor Framework task model**, not `av/harbor` service orchestration.  
+So for a mix-and-match solver/benchmark runner in Inspect AI, the clean path is: **Inspect AI + inspect-harbor + Harbor Framework registry/adapters**.
+
+---
+
+### 1. Harbor Architecture
+
+### `av/harbor` (the repo you linked)
+`av/harbor` is centered on service orchestration via CLI + Docker Compose:
+- `harbor up/down/restart`, defaults, profiles, capabilities detection, per-service config/env.
+- Organizes services into UIs/backends/satellites.
+- Includes `Harbor Bench` as a built-in benchmark service (LLM-as-judge, configurable task YAML, reports/CSV/JSON output).
+
+This architecture is ideal for standing up model infra and tool services quickly, but it is not the same object model as Inspect/Harbor Framework eval tasks.
+
+### Harbor Framework (`laude-institute/harbor`)
+Core concepts are explicit and eval-native:
+- `Task` = instruction + container env + verifier.
+- `Dataset` = collection of tasks.
+- `Agent` runs tasks in environment.
+- `Trial` = one rollout attempt.
+- `Job` = many trials; internally expanded and run in parallel.
+
+This is the Harbor model that `inspect-harbor` consumes.
+
+---
+
+### 2. inspect-harbor as the Inspect↔Harbor Bridge
+From `inspect_harbor` source and README:
+
+- It exposes Inspect tasks like `inspect_harbor/terminal_bench`, `inspect_harbor/hello_world`, etc.
+- Generic entrypoint `harbor(...)` supports loading tasks from:
+  - Harbor registry (`dataset_name_version`)
+  - Local path
+  - Git URL + commit
+  - Custom registry URL/path
+- It maps Harbor task artifacts into Inspect objects:
+  - Harbor task → Inspect `Sample`
+  - Harbor environment → Inspect `SandboxEnvironmentSpec`
+  - Harbor verifier (`tests/test.sh`) → Inspect scorer (`harbor_scorer`)
+  - Harbor solution script → Inspect solver (`oracle`)
+- Default solver if none provided: Inspect ReAct scaffold with `bash`, `python`, `update_plan`, and `CompactionEdit`.
+- Scoring contract: expects verifier output under `/logs/verifier/reward.txt` or `/logs/verifier/reward.json`.
+
+Inference: this is a task/harness bridge, not a Harbor-service lifecycle manager.
+
+---
+
+### 3. Defining and Registering New Solvers
+For Inspect AI, use normal solver registration:
+- Define a `@solver` function returning async solve logic (`TaskState`, `Generate`).
+- Pass with CLI `--solver path/to/file.py@solver_name`.
+
+With Harbor tasks this works unchanged:
+- `inspect eval inspect_harbor/<dataset> --solver your_solver.py@solver --model ...`
+- Or use built-in `inspect_harbor/oracle` for dataset sanity checks.
+
+---
+
+### 4. Defining and Registering New Benchmarks/Datasets
+
+### In Harbor Framework
+- Create/adapter tasks into Harbor task format (`instruction.md`, `task.toml`, `environment/`, `tests/`, optional `solution/`).
+- Register dataset in registry.
+- Harbor adapter docs define parity workflow (oracle pass, parity runs, registration).
+
+### In inspect-harbor
+- Immediate use: call generic `inspect_harbor/harbor` with custom `registry_url`, `registry_path`, local `path`, or git source.
+- Convenience exposure: regenerate static task wrappers via `scripts/generate_tasks.py` (auto-generates `tasks.py` + `REGISTRY.md` from Harbor registry).
+
+---
+
+### 5. Eval Execution Pipeline (actual bridge flow)
+1. `inspect eval inspect_harbor/<task-or-dataset> ...`
+2. `load_harbor_tasks(...)` resolves source (registry/local/git).
+3. Each Harbor task is converted to Inspect `Sample` with sandbox config and metadata.
+4. Solver runs in sandbox (default ReAct/custom/oracle).
+5. `harbor_scorer` copies tests, executes verifier script in sandbox.
+6. Scorer parses reward files and returns score + metadata.
+7. Inspect logs written to `./logs`.
+
+---
+
+### 6. Practical Architecture for a General-Purpose Runner
+
+Recommended design:
+- Config-driven matrix over:
+  - benchmark descriptor (Inspect task path + `-T` args)
+  - solver descriptor (`file.py@solver` or packaged solver)
+  - model(s)
+  - execution controls (`max_tasks`, retries, fail-on-error)
+- Use `eval_set()` for combinatorics and reproducibility.
+- Keep benchmark integration and solver integration decoupled.
+
+Minimal architecture components:
+- Benchmark registry adapter layer (Harbor registry + custom/local)
+- Solver registry layer (Inspect solver specs)
+- Run planner (matrix expansion)
+- Execution engine (Inspect `eval`/`eval_set`)
+- Results sink (Inspect logs + post-processing)
+
+If you must also use `av/harbor`, treat it as infra bootstrap:
+- Start model/tool services with `av/harbor`
+- Point Inspect/solvers at those endpoints
+- Keep eval lifecycle in Inspect + inspect-harbor
+
+---
+
+### 7. Existing Patterns You Can Reuse
+- `inspect_harbor` already includes many benchmark wrappers (auto-generated from Harbor registry).
+- Built-in Oracle solver pattern for verifier sanity.
+- Generic Harbor loader pattern for private/local datasets without waiting for wrapper generation.
+- Harbor Framework adapter workflow for onboarding external benchmarks.
+
+---
+
+### 8. Spider2 + LongMemEval Status and Engineering Gaps
+
+As of March 1, 2026:
+- Harbor registry in `inspect_harbor` includes `spider2-dbt@1.0` (64 tasks).
+- I did not find `LongMemEval` in the generated inspect-harbor registry table.
+
+What this implies:
+- Spider2: you can run the available Harbor adapter variant now (`spider2-dbt`), but it is not identical to the full Spider 2.0 paper scope (632 workflow problems).
+- LongMemEval: likely requires a new Harbor adapter (conversation-history packaging + verifier/scoring mapping) before it becomes first-class in `inspect_harbor`.
+
+Custom engineering likely needed:
+- LongMemEval adapter + Harbor taskification pipeline.
+- Possibly custom scorer logic if category-wise memory metrics are needed beyond scalar reward.
+- Careful design for multi-session memory replay in sandbox context.
+
+---
+
+### Key Gaps / Uncertainties in Research
+- Some Harbor docs/search indexing is noisy due multiple “Harbor” products.
+- Could not verify a separate “inspect-harbor transport/decorator API” in current `meridianlabs-ai/inspect_harbor` source; current public code centers on Harbor task loading + scorer/solver bridge.
+- Spider2 public ecosystem has multiple variants/subsets (site/leaderboard vs adapters), so adapter scope must be pinned explicitly by dataset/version.
+
+---
+
+## Sources
+- https://github.com/av/harbor  
+- https://github.com/av/harbor/wiki/1.-Harbor-User-Guide  
+- https://github.com/av/harbor/wiki/3.-Harbor-CLI-Reference  
+- https://github.com/av/harbor/wiki/5.1.-Harbor-Bench  
+- https://github.com/laude-institute/harbor  
+- https://harborframework.com/docs/core-concepts  
+- https://harborframework.com/docs/agents  
+- https://harborframework.com/docs/tasks  
+- https://harborframework.com/docs/evals  
+- https://harborframework.com/docs/datasets/adapters  
+- https://harborframework.com/docs/datasets/registering-datasets  
+- https://pypi.org/project/inspect-harbor/  
+- https://github.com/meridianlabs-ai/inspect_harbor  
+- https://raw.githubusercontent.com/meridianlabs-ai/inspect_harbor/main/README.md  
+- https://raw.githubusercontent.com/meridianlabs-ai/inspect_harbor/main/src/inspect_harbor/__init__.py  
+- https://raw.githubusercontent.com/meridianlabs-ai/inspect_harbor/main/src/inspect_harbor/harbor/_task.py  
+- https://raw.githubusercontent.com/meridianlabs-ai/inspect_harbor/main/src/inspect_harbor/harbor/_converters.py  
+- https://raw.githubusercontent.com/meridianlabs-ai/inspect_harbor/main/src/inspect_harbor/harbor/_scorer.py  
+- https://raw.githubusercontent.com/meridianlabs-ai/inspect_harbor/main/src/inspect_harbor/harbor/_solver.py  
+- https://raw.githubusercontent.com/meridianlabs-ai/inspect_harbor/main/src/inspect_harbor/harbor/_sandbox_utils.py  
+- https://raw.githubusercontent.com/meridianlabs-ai/inspect_harbor/main/src/inspect_harbor/tasks.py  
+- https://raw.githubusercontent.com/meridianlabs-ai/inspect_harbor/main/scripts/generate_tasks.py  
+- https://raw.githubusercontent.com/meridianlabs-ai/inspect_harbor/main/REGISTRY.md  
+- https://inspect.aisi.org.uk/reference/inspect_ai.solver.html  
+- https://inspect.aisi.org.uk/solvers.html  
+- https://inspect.aisi.org.uk/tasks.html  
+- https://arxiv.org/abs/2411.07763  
+- https://spider2-sql.github.io/  
+- https://github.com/xiaowu0162/LongMemEval
+tokens used
+254,072

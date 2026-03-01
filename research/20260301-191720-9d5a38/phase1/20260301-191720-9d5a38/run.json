@@ -1,0 +1,45 @@
+{
+  "timestamp": "2026-03-01T19:26:20.762Z",
+  "slug": "20260301-191720-9d5a38",
+  "prompt": "file:research-prompt.md",
+  "promptSource": "file",
+  "readOnlyPolicy": "bestEffort",
+  "tools": [
+    {
+      "toolId": "claude-opus",
+      "status": "success",
+      "exitCode": 0,
+      "durationMs": 539849,
+      "wordCount": 2955,
+      "outputFile": "research/20260301-191720-9d5a38/phase1/20260301-191720-9d5a38/claude-opus.md",
+      "stderrFile": "research/20260301-191720-9d5a38/phase1/20260301-191720-9d5a38/claude-opus.stderr"
+    },
+    {
+      "toolId": "codex-5.3-xhigh",
+      "status": "success",
+      "exitCode": 0,
+      "durationMs": 403232,
+      "wordCount": 955,
+      "outputFile": "research/20260301-191720-9d5a38/phase1/20260301-191720-9d5a38/codex-5.3-xhigh.md",
+      "stderrFile": "research/20260301-191720-9d5a38/phase1/20260301-191720-9d5a38/codex-5.3-xhigh.stderr"
+    },
+    {
+      "toolId": "amp-deep",
+      "status": "success",
+      "exitCode": 0,
+      "durationMs": 1486,
+      "wordCount": 0,
+      "outputFile": "research/20260301-191720-9d5a38/phase1/20260301-191720-9d5a38/amp-deep.md",
+      "stderrFile": "research/20260301-191720-9d5a38/phase1/20260301-191720-9d5a38/amp-deep.stderr",
+      "cost": {
+        "cost_usd": 0.01,
+        "free_used_usd": 0.01,
+        "credits_used_usd": 0,
+        "source": "free",
+        "free_remaining_usd": 14.99,
+        "free_total_usd": 15,
+        "credits_remaining_usd": 0
+      }
+    }
+  ]
+}

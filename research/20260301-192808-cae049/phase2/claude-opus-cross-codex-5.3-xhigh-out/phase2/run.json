@@ -1,0 +1,19 @@
+{
+  "timestamp": "2026-03-01T19:46:09.951Z",
+  "slug": "phase2",
+  "prompt": "file:claude-opus-cross-codex-5.3-xhigh-prompt.md",
+  "promptSource": "file",
+  "readOnlyPolicy": "bestEffort",
+  "tools": [
+    {
+      "toolId": "claude-opus",
+      "status": "timeout",
+      "exitCode": 143,
+      "durationMs": 540386,
+      "wordCount": 0,
+      "outputFile": "research/20260301-192808-cae049/phase2/claude-opus-cross-codex-5.3-xhigh-out/phase2/claude-opus.md",
+      "stderrFile": "research/20260301-192808-cae049/phase2/claude-opus-cross-codex-5.3-xhigh-out/phase2/claude-opus.stderr",
+      "error": ""
+    }
+  ]
+}
