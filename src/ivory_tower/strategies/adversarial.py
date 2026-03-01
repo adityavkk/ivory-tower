@@ -42,9 +42,13 @@ def _normalize_counselors_output(
 ) -> None:
     """Copy agent outputs from counselors slug subdirectory to expected paths.
 
-    Some agents (e.g. OpenCode) write to ``report.md`` instead of
-    ``{agent}.md``.  When there is exactly one agent and the expected
-    file is missing, fall back to ``report.md``.
+    Searches ALL slug subdirectories (not just the most recent) for each
+    agent's output file using progressively looser matching:
+
+    1. Exact ``{agent}.md``
+    2. ``report.md`` fallback (single-agent case)
+    3. Substring match: any ``.md`` file whose stem contains the agent name
+    4. Sole ``.md`` file in the slug dir (single-agent case)
     """
     slug_dirs = sorted(
         (d for d in output_dir.iterdir() if d.is_dir()),
@@ -53,16 +57,48 @@ def _normalize_counselors_output(
     )
     if not slug_dirs:
         return
-    slug_dir = slug_dirs[0]
+
     for agent in agents:
-        src = slug_dir / f"{agent}.md"
         dst = output_dir / f"{agent}{suffix}"
-        if not src.exists() and len(agents) == 1:
+        if dst.exists():
+            continue
+
+        src: Path | None = None
+
+        for slug_dir in slug_dirs:
+            # 1. Exact match
+            candidate = slug_dir / f"{agent}.md"
+            if candidate.exists():
+                src = candidate
+                break
+
+            # 2. report.md fallback (any number of agents)
             fallback = slug_dir / "report.md"
             if fallback.exists():
                 src = fallback
-        if src.exists() and not dst.exists():
+                break
+
+            # 3. Substring match: filename stem contains the agent name
+            md_files = list(slug_dir.glob("*.md"))
+            for md in md_files:
+                if agent in md.stem:
+                    src = md
+                    break
+            if src is not None:
+                break
+
+            # 4. Sole .md file when there's only one unmatched agent
+            if len(agents) == 1 and len(md_files) == 1:
+                src = md_files[0]
+                break
+
+        if src is not None:
             shutil.copy2(src, dst)
+            logger.debug("Normalized %s -> %s", src, dst)
+        else:
+            logger.warning(
+                "Could not find output for agent %s in %s", agent, output_dir
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -292,17 +328,28 @@ def read_counselors_output(output_dir: Path, agent: str) -> str:
         reverse=True,
     )
     for slug_dir in slug_dirs:
+        # 1. Exact match
         agent_file = slug_dir / f"{agent}.md"
         if agent_file.exists():
             return agent_file.read_text()
+        # 2. Substring match: any .md whose stem contains the agent name
         md_files = list(slug_dir.glob("*.md"))
+        for md in md_files:
+            if agent in md.stem:
+                return md.read_text()
+        # 3. Any .md file as last resort for this slug dir
         if md_files:
             return md_files[0].read_text()
 
+    # Fallback: files directly in output_dir
     agent_file = output_dir / f"{agent}.md"
     if agent_file.exists():
         return agent_file.read_text()
+    # Substring match in output_dir
     md_files = list(output_dir.glob("*.md"))
+    for md in md_files:
+        if agent in md.stem:
+            return md.read_text()
     if md_files:
         return md_files[0].read_text()
     raise FileNotFoundError(f"No output found for agent '{agent}' in {output_dir}")
