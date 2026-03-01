@@ -1,5 +1,7 @@
 """Prompt templates for the three research phases."""
 
+from __future__ import annotations
+
 _RESEARCH_TEMPLATE = """\
 # Deep Research Task
 
@@ -144,8 +146,8 @@ definitive reference document on this topic."""
 _JUDGING_TEMPLATE = """\
 # Research Report Evaluation
 
-You are an expert research evaluator. Score the following research report
-on a 1-10 scale across five dimensions. Be rigorous and critical.
+You are an expert research evaluator. Your job is to evaluate the report below
+and then provide your scores as structured JSON.
 
 ## Research Topic
 {topic}
@@ -153,9 +155,9 @@ on a 1-10 scale across five dimensions. Be rigorous and critical.
 ## Report to Evaluate
 {candidate_report}
 
-## Scoring Rubric
+## Step 1: Evaluate
 
-Rate each dimension from 1 (poor) to 10 (excellent):
+Analyze the report across these five dimensions, rating each from 1 (poor) to 10 (excellent):
 
 1. **Factual Accuracy** -- Are claims well-sourced and verifiable? Any errors or unsupported assertions?
 2. **Depth of Analysis** -- Does the report go beyond surface-level description into genuine insight?
@@ -163,15 +165,27 @@ Rate each dimension from 1 (poor) to 10 (excellent):
 4. **Coverage Breadth** -- Does the report cover all important aspects of the topic? Any major gaps?
 5. **Analytical Rigor** -- Is reasoning sound? Are conclusions supported by evidence? Are counterarguments considered?
 
-## Output Format (JSON)
-
-Respond with ONLY a JSON object (no markdown fencing, no extra text):
-
-{{"overall_score": <float 1-10, weighted average>, "dimensions": {{"factual_accuracy": <int 1-10>, "depth_of_analysis": <int 1-10>, "source_quality": <int 1-10>, "coverage_breadth": <int 1-10>, "analytical_rigor": <int 1-10>}}, "strengths": ["<strength 1>", "<strength 2>"], "weaknesses": ["<weakness 1>", "<weakness 2>"], "suggestions": ["<specific improvement 1>", "<specific improvement 2>"], "critique": "<2-3 paragraph detailed critique explaining the scores>"}}
-
-Be specific in your critique. Vague feedback like "could be better" is useless.
+Be specific in your evaluation. Vague feedback like "could be better" is useless.
 Point to specific claims, sections, or gaps. Your feedback will be used to
-iteratively improve this report."""
+iteratively improve this report.
+
+## Step 2: Output JSON
+
+After your analysis, you MUST output your scores as a JSON object on the FINAL LINE
+of your response. The JSON object must contain these exact keys:
+
+- `overall_score` -- float from 1 to 10 (weighted average of dimensions)
+- `dimensions` -- object with keys: `factual_accuracy`, `depth_of_analysis`, `source_quality`, `coverage_breadth`, `analytical_rigor` (each an integer 1-10)
+- `strengths` -- array of strings (specific things the report does well)
+- `weaknesses` -- array of strings (specific problems or gaps)
+- `suggestions` -- array of strings (concrete, actionable improvements)
+- `critique` -- string (2-3 paragraph detailed critique explaining the scores)
+
+Here is an example of the expected JSON format:
+
+{{"overall_score": 6.5, "dimensions": {{"factual_accuracy": 7, "depth_of_analysis": 6, "source_quality": 5, "coverage_breadth": 7, "analytical_rigor": 6}}, "strengths": ["Comprehensive coverage of major subtopics", "Good use of recent primary sources in Section 3"], "weaknesses": ["Section 2 lacks citations for key claims", "No discussion of counterarguments to the main thesis"], "suggestions": ["Add primary sources for the claims in Section 2", "Include a subsection on limitations and opposing viewpoints"], "critique": "The report provides a solid overview of the topic with good breadth. However, several claims in Section 2 are presented without supporting evidence, which undermines the overall credibility. The analysis would benefit from engaging with counterarguments rather than presenting a one-sided view."}}
+
+IMPORTANT: The JSON object must appear on the very last line of your response."""
 
 _IMPROVEMENT_TEMPLATE = """\
 # Research Report Improvement -- Round {round_num}
@@ -231,10 +245,10 @@ agent. You have both optimized reports below.
 ## Topic
 {topic_content}
 
-## Optimized Report A ({agent_a}, scored {score_a}/10 by {agent_b})
+## Optimized Report A ({agent_a}{score_label_a})
 {optimized_report_a}
 
-## Optimized Report B ({agent_b}, scored {score_b}/10 by {agent_a})
+## Optimized Report B ({agent_b}{score_label_b})
 {optimized_report_b}
 
 ## Your Task
@@ -294,22 +308,24 @@ def build_adversarial_synthesis_prompt(
     topic: str,
     agent_a: str,
     optimized_report_a: str,
-    score_a: float,
+    score_a: float | None,
     agent_b: str,
     optimized_report_b: str,
-    score_b: float,
+    score_b: float | None,
     total_rounds: int,
 ) -> str:
     """Build the adversarial synthesis prompt."""
+    score_label_a = f", scored {score_a:.1f}/10 by {agent_b}" if score_a is not None else ""
+    score_label_b = f", scored {score_b:.1f}/10 by {agent_a}" if score_b is not None else ""
     return _ADVERSARIAL_SYNTHESIS_TEMPLATE.format(
         total_rounds=total_rounds,
         topic_content=topic,
         agent_a=agent_a,
         optimized_report_a=optimized_report_a,
-        score_a=score_a,
+        score_label_a=score_label_a,
         agent_b=agent_b,
         optimized_report_b=optimized_report_b,
-        score_b=score_b,
+        score_label_b=score_label_b,
     )
 
 
