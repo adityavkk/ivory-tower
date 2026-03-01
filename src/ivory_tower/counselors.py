@@ -1,4 +1,8 @@
-"""Wrapper around the external `counselors` CLI."""
+"""Wrapper around the external `counselors` CLI.
+
+Resolves the counselors binary automatically: prefers a global install,
+falls back to bunx then npx so users don't need a separate install step.
+"""
 
 from __future__ import annotations
 
@@ -16,18 +20,32 @@ class CounselorsError(Exception):
         super().__init__(message)
 
 
-def check_counselors_installed() -> bool:
-    """Return True if the counselors binary is on PATH."""
-    return shutil.which("counselors") is not None
+def resolve_counselors_cmd() -> list[str]:
+    """Return the command prefix for invoking counselors.
+
+    Resolution order:
+      1. Global ``counselors`` binary on PATH
+      2. ``bunx counselors`` (bun)
+      3. ``npx counselors`` (node)
+
+    Raises CounselorsError if none found.
+    """
+    if shutil.which("counselors"):
+        return ["counselors"]
+    if shutil.which("bunx"):
+        return ["bunx", "counselors"]
+    if shutil.which("npx"):
+        return ["npx", "counselors"]
+    raise CounselorsError(
+        "counselors not found. Install globally (npm i -g counselors), "
+        "or ensure bunx/npx is on PATH."
+    )
 
 
 def list_available_agents() -> list[str]:
-    """Run `counselors ls --json` and return list of agent ID strings."""
-    result = subprocess.run(
-        ["counselors", "ls", "--json"],
-        capture_output=True,
-        text=True,
-    )
+    """Run ``counselors ls --json`` and return list of agent ID strings."""
+    cmd = [*resolve_counselors_cmd(), "ls", "--json"]
+    result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise CounselorsError(result.stderr, stderr=result.stderr)
     payload = json.loads(result.stdout)
@@ -35,7 +53,7 @@ def list_available_agents() -> list[str]:
 
 
 def validate_agents(requested: list[str], available: list[str]) -> list[str]:
-    """Return list of agent names in `requested` that are not in `available`."""
+    """Return agent names in *requested* that are not in *available*."""
     available_set = set(available)
     return [name for name in requested if name not in available_set]
 
@@ -48,11 +66,12 @@ def run_counselors(
 ) -> subprocess.CompletedProcess:
     """Run counselors with given prompt and agents.
 
+    Resolves the binary automatically via resolve_counselors_cmd().
     If verbose, streams output to terminal; otherwise captures it.
     Raises CounselorsError on non-zero exit.
     """
     cmd = [
-        "counselors", "run",
+        *resolve_counselors_cmd(), "run",
         "-f", str(prompt_file),
         "--tools", ",".join(agents),
         "--json",
@@ -60,10 +79,7 @@ def run_counselors(
     ]
 
     kwargs: dict = {"text": True}
-    if verbose:
-        # stdout/stderr inherit from parent -- not passed as kwargs
-        pass
-    else:
+    if not verbose:
         kwargs["stdout"] = subprocess.PIPE
         kwargs["stderr"] = subprocess.PIPE
 

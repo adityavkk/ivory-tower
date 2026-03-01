@@ -10,8 +10,9 @@ from typing import Annotated, Optional
 import typer
 
 from ivory_tower.counselors import (
-    check_counselors_installed,
+    CounselorsError,
     list_available_agents,
+    resolve_counselors_cmd,
     validate_agents,
 )
 from ivory_tower.engine import (
@@ -85,11 +86,10 @@ def research(
         raise typer.Exit(code=1)
 
     # -- check counselors --
-    if not check_counselors_installed():
-        typer.echo(
-            "Error: 'counselors' CLI not found. Install with: npm i -g @anthropic/counselors",
-            err=True,
-        )
+    try:
+        resolve_counselors_cmd()
+    except CounselorsError as exc:
+        typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=1)
 
     # -- validate agents --
