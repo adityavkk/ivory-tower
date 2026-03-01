@@ -27,6 +27,7 @@ from ivory_tower.prompts import (
     build_synthesis_prompt,
 )
 from ivory_tower.run import create_initial_manifest, create_run_directory, generate_run_id
+from ivory_tower.strategies import get_strategy
 
 
 @dataclass
@@ -39,6 +40,8 @@ class RunConfig:
     verbose: bool = False
     output_dir: Path = field(default_factory=lambda: Path("./research"))
     dry_run: bool = False
+    strategy: str = "council"
+    max_rounds: int = 10
 
 
 def _now_iso() -> str:
@@ -285,21 +288,21 @@ def run_phase3(run_dir: Path, config: RunConfig, manifest: Manifest) -> Manifest
 
 
 def run_pipeline(config: RunConfig) -> Path:
-    """Run the full 3-phase research pipeline. Returns path to run directory."""
+    """Run a research pipeline using the configured strategy.
+
+    Delegates to the strategy's run() method. Returns path to run directory.
+    """
+    strategy = get_strategy(config.strategy)
+
+    # Validate config
+    errors = strategy.validate(config)
+    if errors:
+        raise ConfigError("; ".join(errors))
+
     run_id = generate_run_id()
     run_dir = create_run_directory(config.output_dir, run_id)
 
-    manifest = create_initial_manifest(
-        run_id=run_id,
-        topic=config.topic,
-        agents=config.agents,
-        synthesizer=config.synthesizer,
-        flags=Flags(
-            raw=config.raw,
-            instructions=config.instructions,
-            verbose=config.verbose,
-        ),
-    )
+    manifest = strategy.create_manifest(config, run_id)
 
     # Save topic
     (run_dir / "topic.md").write_text(config.topic)
@@ -307,16 +310,13 @@ def run_pipeline(config: RunConfig) -> Path:
     # Save initial manifest
     manifest.save(run_dir / "manifest.json")
 
-    t0 = time.monotonic()
-
-    manifest = run_phase1(run_dir, config, manifest)
-    manifest = run_phase2(run_dir, config, manifest)
-    manifest = run_phase3(run_dir, config, manifest)
-
-    manifest.total_duration_seconds = time.monotonic() - t0
-    manifest.save(run_dir / "manifest.json")
+    strategy.run(run_dir, config, manifest)
 
     return run_dir
+
+
+class ConfigError(Exception):
+    """Raised when a run configuration is invalid."""
 
 
 # ---------------------------------------------------------------------------
@@ -327,8 +327,8 @@ def run_pipeline(config: RunConfig) -> Path:
 def resume_pipeline(run_dir: Path, verbose: bool = False) -> Path:
     """Resume a partially-completed pipeline run.
 
-    Loads manifest from run_dir, determines which phases are done,
-    and runs the remaining ones. Returns run_dir.
+    Reads strategy from manifest and dispatches to the appropriate strategy.
+    Returns run_dir.
     """
     manifest_path = run_dir / "manifest.json"
     if not manifest_path.exists():
@@ -336,6 +336,8 @@ def resume_pipeline(run_dir: Path, verbose: bool = False) -> Path:
 
     manifest = Manifest.load(manifest_path)
     topic = (run_dir / "topic.md").read_text()
+
+    strategy = get_strategy(manifest.strategy)
 
     config = RunConfig(
         topic=topic,
@@ -345,53 +347,19 @@ def resume_pipeline(run_dir: Path, verbose: bool = False) -> Path:
         instructions=manifest.flags.instructions,
         verbose=verbose,
         output_dir=run_dir.parent,
+        strategy=manifest.strategy,
+        max_rounds=manifest.flags.max_rounds,
     )
 
-    research_done = manifest.phases["research"].status == PhaseStatus.COMPLETE
-    cp_done = manifest.phases["cross_pollination"].status == PhaseStatus.COMPLETE
-    synthesis_done = manifest.phases["synthesis"].status == PhaseStatus.COMPLETE
-
-    if research_done and cp_done and synthesis_done:
-        return run_dir
-
-    t0 = time.monotonic()
-
-    if not research_done:
-        manifest = run_phase1(run_dir, config, manifest)
-
-    if not cp_done:
-        manifest = run_phase2(run_dir, config, manifest)
-
-    if not synthesis_done:
-        manifest = run_phase3(run_dir, config, manifest)
-
-    manifest.total_duration_seconds = time.monotonic() - t0
-    manifest.save(manifest_path)
+    strategy.resume(run_dir, config, manifest)
 
     return run_dir
 
 
 def print_dry_run(config: RunConfig) -> None:
-    """Print execution plan without running anything."""
-    prompt_preview = build_research_prompt(
-        config.topic, instructions=config.instructions, raw=config.raw
-    )
-    preview = prompt_preview[:200]
+    """Print execution plan without running anything.
 
-    n = len(config.agents)
-    phase2_sessions = n * (n - 1)
-
-    print("=== Dry Run: Execution Plan ===")
-    print()
-    print(f"Topic: {config.topic}")
-    print()
-    print(f"Agents ({n}): {', '.join(config.agents)}")
-    print(f"Synthesizer: {config.synthesizer}")
-    print()
-    print("Phases:")
-    print(f"  1. Research: {n} agents research independently")
-    print(f"  2. Cross-Pollination: {phase2_sessions} refinement sessions")
-    print(f"  3. Synthesis: {config.synthesizer} produces final report")
-    print()
-    print(f"Prompt Preview (first 200 chars):")
-    print(f"  {preview}")
+    Delegates to the strategy's dry_run() method.
+    """
+    strategy = get_strategy(config.strategy)
+    strategy.dry_run(config)

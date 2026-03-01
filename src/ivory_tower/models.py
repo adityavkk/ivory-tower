@@ -14,6 +14,7 @@ class PhaseStatus(Enum):
     RUNNING = "running"
     COMPLETE = "complete"
     FAILED = "failed"
+    PARTIAL = "partial"
 
 
 @dataclass
@@ -63,6 +64,7 @@ class Flags:
     raw: bool = False
     instructions: str | None = None
     verbose: bool = False
+    max_rounds: int = 10
 
 
 @dataclass
@@ -102,6 +104,7 @@ class Manifest:
                 "raw": self.flags.raw,
                 "instructions": self.flags.instructions,
                 "verbose": self.flags.verbose,
+                "max_rounds": self.flags.max_rounds,
             },
             "phases": phases_dict,
             "total_duration_seconds": self.total_duration_seconds,
@@ -162,6 +165,7 @@ class Manifest:
             raw=flags_d["raw"],
             instructions=flags_d["instructions"],
             verbose=flags_d["verbose"],
+            max_rounds=flags_d.get("max_rounds", 10),
         )
 
         strategy = data.get("strategy", "council")

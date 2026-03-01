@@ -459,23 +459,19 @@ class TestRunPhase3:
 
 
 class TestRunPipeline:
-    @patch("ivory_tower.engine.run_phase3")
-    @patch("ivory_tower.engine.run_phase2")
-    @patch("ivory_tower.engine.run_phase1")
-    @patch("ivory_tower.engine.create_initial_manifest")
-    @patch("ivory_tower.engine.create_run_directory")
     @patch("ivory_tower.engine.generate_run_id")
+    @patch("ivory_tower.engine.create_run_directory")
+    @patch("ivory_tower.strategies.council.CouncilStrategy.run")
+    @patch("ivory_tower.strategies.council.CouncilStrategy.create_manifest")
     def test_run_pipeline_creates_directory_and_manifest(
         self,
-        mock_gen_id,
-        mock_create_dir,
         mock_create_manifest,
-        mock_phase1,
-        mock_phase2,
-        mock_phase3,
+        mock_strategy_run,
+        mock_create_dir,
+        mock_gen_id,
         tmp_path,
     ):
-        """End-to-end: pipeline creates dir, manifest, runs all phases."""
+        """End-to-end: pipeline creates dir, manifest, delegates to strategy."""
         run_dir = tmp_path / "research" / "20260301-143000-abc123"
         run_dir.mkdir(parents=True)
 
@@ -484,11 +480,7 @@ class TestRunPipeline:
 
         manifest = _make_manifest()
         mock_create_manifest.return_value = manifest
-
-        # Each phase returns the manifest (possibly mutated)
-        mock_phase1.return_value = manifest
-        mock_phase2.return_value = manifest
-        mock_phase3.return_value = manifest
+        mock_strategy_run.return_value = manifest
 
         config = _make_config(output_dir=tmp_path / "research")
         result_path = run_pipeline(config)
@@ -498,10 +490,8 @@ class TestRunPipeline:
         mock_create_dir.assert_called_once()
         mock_create_manifest.assert_called_once()
 
-        # All three phases executed in order
-        mock_phase1.assert_called_once()
-        mock_phase2.assert_called_once()
-        mock_phase3.assert_called_once()
+        # Strategy run was called
+        mock_strategy_run.assert_called_once()
 
         # Returns the run directory
         assert result_path == run_dir
@@ -510,10 +500,6 @@ class TestRunPipeline:
         topic_file = run_dir / "topic.md"
         assert topic_file.exists()
         assert TOPIC in topic_file.read_text()
-
-        # total_duration_seconds set
-        assert manifest.total_duration_seconds is not None
-        assert manifest.total_duration_seconds >= 0
 
 
 # ---------------------------------------------------------------------------
@@ -550,59 +536,42 @@ class TestDryRun:
 
 
 class TestResumePipeline:
-    @patch("ivory_tower.engine.run_phase3")
-    @patch("ivory_tower.engine.run_phase2")
-    @patch("ivory_tower.engine.run_phase1")
-    def test_resume_skips_completed_research(
-        self, mock_phase1, mock_phase2, mock_phase3, tmp_path
-    ):
-        """If research is complete, resume skips phase1."""
+    @patch("ivory_tower.strategies.council.CouncilStrategy.resume")
+    def test_resume_skips_completed_research(self, mock_resume, tmp_path):
+        """Resume delegates to strategy.resume()."""
         manifest = _make_manifest()
         manifest.phases["research"].status = PhaseStatus.COMPLETE
         manifest.save(tmp_path / "manifest.json")
         (tmp_path / "topic.md").write_text(TOPIC)
 
-        mock_phase2.return_value = manifest
-        mock_phase3.return_value = manifest
+        mock_resume.return_value = manifest
 
         from ivory_tower.engine import resume_pipeline
 
         resume_pipeline(tmp_path)
 
-        mock_phase1.assert_not_called()
-        mock_phase2.assert_called_once()
-        mock_phase3.assert_called_once()
+        mock_resume.assert_called_once()
 
-    @patch("ivory_tower.engine.run_phase3")
-    @patch("ivory_tower.engine.run_phase2")
-    @patch("ivory_tower.engine.run_phase1")
-    def test_resume_skips_completed_research_and_cp(
-        self, mock_phase1, mock_phase2, mock_phase3, tmp_path
-    ):
-        """If research + cross_pollination complete, resume runs only phase3."""
+    @patch("ivory_tower.strategies.council.CouncilStrategy.resume")
+    def test_resume_skips_completed_research_and_cp(self, mock_resume, tmp_path):
+        """Resume delegates to strategy even when only synthesis remains."""
         manifest = _make_manifest()
         manifest.phases["research"].status = PhaseStatus.COMPLETE
         manifest.phases["cross_pollination"].status = PhaseStatus.COMPLETE
         manifest.save(tmp_path / "manifest.json")
         (tmp_path / "topic.md").write_text(TOPIC)
 
-        mock_phase3.return_value = manifest
+        mock_resume.return_value = manifest
 
         from ivory_tower.engine import resume_pipeline
 
         resume_pipeline(tmp_path)
 
-        mock_phase1.assert_not_called()
-        mock_phase2.assert_not_called()
-        mock_phase3.assert_called_once()
+        mock_resume.assert_called_once()
 
-    @patch("ivory_tower.engine.run_phase3")
-    @patch("ivory_tower.engine.run_phase2")
-    @patch("ivory_tower.engine.run_phase1")
-    def test_resume_all_complete_returns_early(
-        self, mock_phase1, mock_phase2, mock_phase3, tmp_path
-    ):
-        """If all phases complete, resume runs nothing."""
+    @patch("ivory_tower.strategies.council.CouncilStrategy.resume")
+    def test_resume_all_complete_returns_early(self, mock_resume, tmp_path):
+        """If all phases complete, strategy.resume() still called (it handles early return)."""
         manifest = _make_manifest()
         manifest.phases["research"].status = PhaseStatus.COMPLETE
         manifest.phases["cross_pollination"].status = PhaseStatus.COMPLETE
@@ -610,38 +579,29 @@ class TestResumePipeline:
         manifest.save(tmp_path / "manifest.json")
         (tmp_path / "topic.md").write_text(TOPIC)
 
+        mock_resume.return_value = manifest
+
         from ivory_tower.engine import resume_pipeline
 
         result = resume_pipeline(tmp_path)
 
-        mock_phase1.assert_not_called()
-        mock_phase2.assert_not_called()
-        mock_phase3.assert_not_called()
         assert result == tmp_path
+        mock_resume.assert_called_once()
 
-    @patch("ivory_tower.engine.run_phase3")
-    @patch("ivory_tower.engine.run_phase2")
-    @patch("ivory_tower.engine.run_phase1")
-    def test_resume_from_scratch_if_research_incomplete(
-        self, mock_phase1, mock_phase2, mock_phase3, tmp_path
-    ):
-        """If research not complete, resume runs all phases."""
+    @patch("ivory_tower.strategies.council.CouncilStrategy.resume")
+    def test_resume_from_scratch_if_research_incomplete(self, mock_resume, tmp_path):
+        """If research not complete, strategy.resume() is called."""
         manifest = _make_manifest()
-        # research is PENDING (default)
         manifest.save(tmp_path / "manifest.json")
         (tmp_path / "topic.md").write_text(TOPIC)
 
-        mock_phase1.return_value = manifest
-        mock_phase2.return_value = manifest
-        mock_phase3.return_value = manifest
+        mock_resume.return_value = manifest
 
         from ivory_tower.engine import resume_pipeline
 
         resume_pipeline(tmp_path)
 
-        mock_phase1.assert_called_once()
-        mock_phase2.assert_called_once()
-        mock_phase3.assert_called_once()
+        mock_resume.assert_called_once()
 
     def test_resume_missing_manifest_raises(self, tmp_path):
         """resume_pipeline on dir without manifest -> FileNotFoundError."""
@@ -650,29 +610,23 @@ class TestResumePipeline:
         with pytest.raises(FileNotFoundError):
             resume_pipeline(tmp_path)
 
-    @patch("ivory_tower.engine.run_phase3")
-    @patch("ivory_tower.engine.run_phase2")
-    @patch("ivory_tower.engine.run_phase1")
-    def test_resume_reconstructs_config_from_manifest(
-        self, mock_phase1, mock_phase2, mock_phase3, tmp_path
-    ):
+    @patch("ivory_tower.strategies.council.CouncilStrategy.resume")
+    def test_resume_reconstructs_config_from_manifest(self, mock_resume, tmp_path):
         """RunConfig is reconstructed from manifest fields."""
         manifest = _make_manifest()
         manifest.flags = Flags(raw=True, instructions="focus on safety")
         manifest.save(tmp_path / "manifest.json")
         (tmp_path / "topic.md").write_text(TOPIC)
 
-        mock_phase1.return_value = manifest
-        mock_phase2.return_value = manifest
-        mock_phase3.return_value = manifest
+        mock_resume.return_value = manifest
 
         from ivory_tower.engine import resume_pipeline
 
         resume_pipeline(tmp_path, verbose=True)
 
-        # Check config passed to phase1
-        call_args = mock_phase1.call_args
-        config = call_args[0][1]  # second positional arg
+        # Check config passed to strategy.resume()
+        call_args = mock_resume.call_args
+        config = call_args[0][1]  # second positional arg (run_dir, config, manifest)
         assert config.topic == TOPIC
         assert config.agents == AGENTS
         assert config.synthesizer == "claude-opus"

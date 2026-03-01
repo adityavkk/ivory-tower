@@ -96,6 +96,7 @@ class CouncilStrategy:
                 raw=config.raw,
                 instructions=config.instructions,
                 verbose=config.verbose,
+                max_rounds=getattr(config, "max_rounds", 10),
             ),
             phases={
                 "research": ResearchPhase(
