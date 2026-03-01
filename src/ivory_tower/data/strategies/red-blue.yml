@@ -1,0 +1,53 @@
+strategy:
+  name: red-blue
+  description: "Red team attacks, blue team defends, judge synthesizes"
+  version: 1
+
+teams:
+  red:
+    role: attacker
+    description: "Find weaknesses, counter-arguments, missing evidence"
+  blue:
+    role: defender
+    description: "Research, build arguments, address critiques"
+
+phases:
+  - name: blue-research
+    description: "Blue team researches the topic"
+    isolation: team
+    agents: [blue]
+    blackboard:
+      name: blue-board
+      dir: "blue-workspace"
+      access: rw
+    output: "{agent}-research.md"
+
+  - name: red-critique
+    description: "Red team critiques blue team's research"
+    isolation: cross-team-read
+    agents: [red]
+    input_from: blue-research
+    blackboard:
+      name: red-board
+      dir: "red-workspace"
+      access: rw
+    output: "{agent}-critique.md"
+
+  - name: blue-defense
+    description: "Blue team addresses red team critiques"
+    isolation: cross-team-read
+    agents: [blue]
+    input_from: red-critique
+    output: "{agent}-defense.md"
+
+  - name: synthesize
+    description: "Judge synthesizes all perspectives"
+    isolation: read-all
+    agents: [synthesizer]
+    input_from: [blue-research, red-critique, blue-defense]
+    output: "final-report.md"
+
+defaults:
+  agents:
+    min: 3
+    max: 10

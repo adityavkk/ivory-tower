@@ -97,6 +97,9 @@ class Manifest:
     phases: dict[str, Any]
     strategy: str = "council"
     total_duration_seconds: float | None = None
+    sandbox_config: dict | None = None
+    template_name: str | None = None
+    agent_profiles: dict | None = None
 
     # -- serialization --
 
@@ -114,7 +117,7 @@ class Manifest:
                 "synthesis": self._synthesis_to_dict(),
             }
 
-        return {
+        result = {
             "run_id": self.run_id,
             "strategy": self.strategy,
             "topic": self.topic,
@@ -129,6 +132,13 @@ class Manifest:
             "phases": phases_dict,
             "total_duration_seconds": self.total_duration_seconds,
         }
+        if self.sandbox_config is not None:
+            result["sandbox_config"] = self.sandbox_config
+        if self.template_name is not None:
+            result["template_name"] = self.template_name
+        if self.agent_profiles is not None:
+            result["agent_profiles"] = self.agent_profiles
+        return result
 
     def _research_to_dict(self) -> dict[str, Any]:
         rp = self.phases["research"]
@@ -209,6 +219,9 @@ class Manifest:
             phases=phases,
             strategy=strategy,
             total_duration_seconds=data.get("total_duration_seconds"),
+            sandbox_config=data.get("sandbox_config"),
+            template_name=data.get("template_name"),
+            agent_profiles=data.get("agent_profiles"),
         )
 
     @staticmethod

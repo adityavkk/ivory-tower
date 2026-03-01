@@ -1,0 +1,30 @@
+strategy:
+  name: council
+  description: "Independent research, cross-pollination, synthesis"
+  version: 1
+
+phases:
+  - name: research
+    description: "Independent parallel research"
+    isolation: full
+    agents: all
+    output: "{agent}-report.md"
+
+  - name: cross-pollinate
+    description: "Each agent refines using all peers' work"
+    isolation: read-peers
+    agents: all
+    input_from: research
+    output: "{agent}-refined.md"
+
+  - name: synthesize
+    description: "Single synthesizer merges all refined reports"
+    isolation: read-all
+    agents: [synthesizer]
+    input_from: cross-pollinate
+    output: "final-report.md"
+
+defaults:
+  agents:
+    min: 2
+    max: 10

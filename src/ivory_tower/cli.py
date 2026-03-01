@@ -24,7 +24,10 @@ from ivory_tower.engine import (
     run_pipeline,
 )
 from ivory_tower.models import Manifest, PhaseStatus
-from ivory_tower.strategies import get_strategy, list_strategies as _list_strategies
+from ivory_tower.profiles import AgentProfile, list_profiles
+from ivory_tower.sandbox import PROVIDERS, get_provider
+from ivory_tower.strategies import STRATEGIES, get_strategy, list_strategies as _list_strategies
+from ivory_tower.templates import list_templates, load_template, validate_template
 
 app = typer.Typer(name="ivory", help="Multi-agent deep research orchestrator.")
 
@@ -77,21 +80,73 @@ def research(
         int,
         typer.Option("--max-rounds", help="Max optimization rounds (adversarial only)"),
     ] = 10,
+    sandbox: Annotated[
+        str,
+        typer.Option("--sandbox", help="Sandbox backend (none, local, agentfs, daytona)"),
+    ] = "none",
+    template: Annotated[
+        Optional[str],
+        typer.Option("--template", "-t", help="Strategy template (built-in name or YAML path)"),
+    ] = None,
+    rounds: Annotated[
+        Optional[int],
+        typer.Option("--rounds", help="Number of rounds for iterative phases"),
+    ] = None,
+    red_team: Annotated[
+        Optional[str],
+        typer.Option("--red-team", help="Comma-separated agent specs for red team"),
+    ] = None,
+    blue_team: Annotated[
+        Optional[str],
+        typer.Option("--blue-team", help="Comma-separated agent specs for blue team"),
+    ] = None,
 ) -> None:
     """Run a multi-agent deep research pipeline on a topic."""
+    # -- sandbox validation --
+    if sandbox != "none":
+        if sandbox not in PROVIDERS:
+            available = ", ".join(sorted(PROVIDERS.keys()))
+            typer.echo(
+                f"Unknown sandbox backend '{sandbox}'. Available: {available}",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        try:
+            get_provider(sandbox)
+        except RuntimeError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1)
+
+    # -- template support --
+    resolved_strategy = strategy
+    if template is not None:
+        try:
+            tmpl = load_template(template)
+        except FileNotFoundError as exc:
+            typer.echo(f"Error: {exc}", err=True)
+            raise typer.Exit(code=1)
+        errors = validate_template(tmpl)
+        if errors:
+            typer.echo("Template validation errors:", err=True)
+            for err in errors:
+                typer.echo(f"  - {err}", err=True)
+            raise typer.Exit(code=1)
+        # Template's strategy name overrides --strategy
+        resolved_strategy = tmpl.name
+
     # -- validate strategy --
     try:
-        get_strategy(strategy)
+        get_strategy(resolved_strategy)
     except ValueError:
         available = ", ".join(name for name, _ in _list_strategies())
         typer.echo(
-            f"Unknown strategy '{strategy}'. Available: {available}",
+            f"Unknown strategy '{resolved_strategy}'. Available: {available}",
             err=True,
         )
         raise typer.Exit(code=1)
 
     # -- warn if --max-rounds used with council --
-    if max_rounds != 10 and strategy == "council":
+    if max_rounds != 10 and resolved_strategy == "council":
         typer.echo(
             "Warning: --max-rounds is only used by the adversarial strategy.",
             err=True,
@@ -118,8 +173,13 @@ def research(
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=1)
 
-    # -- validate agents --
-    agent_list = [a.strip() for a in agents.split(",")]
+    # -- parse agent specs (support @profile-name, model:role, model) --
+    agent_specs = [a.strip() for a in agents.split(",")]
+    agent_list = []
+    for spec in agent_specs:
+        profile = AgentProfile.from_cli_shorthand(spec)
+        agent_list.append(profile.model or profile.name)
+
     all_agents = agent_list + [synthesizer]
     available = list_available_agents()
     invalid = validate_agents(all_agents, available)
@@ -134,6 +194,23 @@ def research(
     # Configure logging
     setup_logging(verbose=verbose)
 
+    # -- parse team specs --
+    parsed_red_team: list[str] | None = None
+    if red_team is not None:
+        parsed_red_team = [
+            (AgentProfile.from_cli_shorthand(s.strip()).model
+             or AgentProfile.from_cli_shorthand(s.strip()).name)
+            for s in red_team.split(",")
+        ]
+
+    parsed_blue_team: list[str] | None = None
+    if blue_team is not None:
+        parsed_blue_team = [
+            (AgentProfile.from_cli_shorthand(s.strip()).model
+             or AgentProfile.from_cli_shorthand(s.strip()).name)
+            for s in blue_team.split(",")
+        ]
+
     config = RunConfig(
         topic=resolved_topic,
         agents=agent_list,
@@ -143,8 +220,13 @@ def research(
         verbose=verbose,
         output_dir=output_dir,
         dry_run=dry_run,
-        strategy=strategy,
+        strategy=resolved_strategy,
         max_rounds=max_rounds,
+        sandbox_backend=sandbox,
+        template=template,
+        rounds=rounds,
+        red_team=parsed_red_team,
+        blue_team=parsed_blue_team,
     )
 
     if dry_run:
@@ -315,3 +397,96 @@ def strategies() -> None:
     typer.echo("-" * 60)
     for name, description in items:
         typer.echo(f"{name:<20} {description}")
+
+
+# ---------------------------------------------------------------------------
+# ivory templates
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def templates() -> None:
+    """List available strategy templates (built-in + user-defined)."""
+    from rich.console import Console
+    from rich.table import Table
+
+    items = list_templates()
+    table = Table(title="Strategy Templates")
+    table.add_column("Name", style="bold")
+    table.add_column("Description")
+    table.add_column("Source")
+
+    for name, description, source in items:
+        table.add_row(name, description, source)
+
+    if not items:
+        typer.echo("No templates found.")
+        raise typer.Exit(code=0)
+
+    console = Console()
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# ivory profiles
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def profiles() -> None:
+    """List available agent profiles from ~/.ivory-tower/profiles/."""
+    from rich.console import Console
+    from rich.table import Table
+
+    items = list_profiles()
+    table = Table(title="Agent Profiles")
+    table.add_column("Name", style="bold")
+    table.add_column("Role")
+    table.add_column("Model")
+
+    for name, role, model in items:
+        table.add_row(name, role, model)
+
+    if not items:
+        typer.echo("No profiles found. Add YAML files to ~/.ivory-tower/profiles/")
+        raise typer.Exit(code=0)
+
+    console = Console()
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# ivory audit
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def audit(
+    run_dir: Annotated[Path, typer.Argument(help="Path to run directory")],
+    agent: Annotated[
+        Optional[str], typer.Argument(help="Agent name to filter")
+    ] = None,
+) -> None:
+    """Query AgentFS tool call audit trail for a run."""
+    manifest_path = run_dir / "manifest.json"
+    if not manifest_path.exists():
+        typer.echo(f"Error: no manifest.json found in {run_dir}", err=True)
+        raise typer.Exit(code=1)
+
+    manifest = Manifest.load(manifest_path)
+
+    typer.echo(f"Run ID:    {manifest.run_id}")
+    typer.echo(f"Strategy:  {manifest.strategy}")
+
+    if manifest.sandbox_config:
+        backend = manifest.sandbox_config.get("backend", "none")
+        typer.echo(f"Sandbox:   {backend}")
+    else:
+        typer.echo("Sandbox:   none")
+
+    if agent:
+        typer.echo(f"Agent:     {agent}")
+
+    typer.echo("")
+    typer.echo("Full AgentFS audit query requires the agentfs package.")
+    typer.echo("Install: curl -fsSL https://agentfs.ai/install | bash")

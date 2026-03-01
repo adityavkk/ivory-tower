@@ -1,0 +1,46 @@
+strategy:
+  name: debate
+  description: "Structured turn-based debate with shared transcript"
+  version: 1
+
+phases:
+  - name: opening
+    description: "Each agent presents initial position"
+    isolation: full
+    agents: all
+    output: "{agent}-opening.md"
+
+  - name: rounds
+    description: "Turn-based debate rounds"
+    isolation: blackboard
+    agents: all
+    rounds: 3
+    blackboard:
+      name: transcript
+      file: "debate-transcript.md"
+      access: append
+    output: "{agent}-round-{round}.md"
+
+  - name: closing
+    description: "Final positions after debate"
+    isolation: read-blackboard
+    agents: all
+    blackboard:
+      name: transcript
+      access: read
+    output: "{agent}-closing.md"
+
+  - name: verdict
+    description: "Independent judge evaluates the debate"
+    isolation: read-all
+    agents: [synthesizer]
+    input_from: [opening, rounds, closing]
+    output: "verdict.md"
+
+defaults:
+  sandbox:
+    backend: local
+  agents:
+    min: 2
+    max: 6
+  rounds: 3

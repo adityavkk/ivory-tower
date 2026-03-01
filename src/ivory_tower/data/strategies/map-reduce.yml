@@ -1,0 +1,30 @@
+strategy:
+  name: map-reduce
+  description: "Decompose topic into subtopics, specialist research, synthesize"
+  version: 1
+
+phases:
+  - name: decompose
+    description: "Break topic into subtopics"
+    isolation: full
+    agents: [planner]
+    output: "subtopics.json"
+
+  - name: map
+    description: "Specialist research on each subtopic"
+    isolation: full
+    agents: dynamic
+    fan_out: decompose
+    output: "{subtopic}-research.md"
+
+  - name: reduce
+    description: "Synthesize all specialist reports"
+    isolation: read-all
+    agents: [synthesizer]
+    input_from: map
+    output: "final-report.md"
+
+defaults:
+  agents:
+    min: 2
+    max: 20

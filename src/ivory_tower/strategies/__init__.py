@@ -5,10 +5,16 @@ from __future__ import annotations
 from ivory_tower.strategies.base import ResearchStrategy
 from ivory_tower.strategies.council import CouncilStrategy
 from ivory_tower.strategies.adversarial import AdversarialStrategy
+from ivory_tower.strategies.debate import DebateStrategy
+from ivory_tower.strategies.map_reduce import MapReduceStrategy
+from ivory_tower.strategies.red_blue import RedBlueStrategy
 
 STRATEGIES: dict[str, type] = {
     "council": CouncilStrategy,
     "adversarial": AdversarialStrategy,
+    "debate": DebateStrategy,
+    "map-reduce": MapReduceStrategy,
+    "red-blue": RedBlueStrategy,
 }
 
 

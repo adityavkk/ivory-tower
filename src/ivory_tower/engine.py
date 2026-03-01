@@ -31,6 +31,11 @@ class RunConfig:
     dry_run: bool = False
     strategy: str = "council"
     max_rounds: int = 10
+    sandbox_backend: str = "none"
+    template: str | None = None
+    rounds: int | None = None
+    red_team: list[str] | None = None
+    blue_team: list[str] | None = None
 
 
 # ---------------------------------------------------------------------------
