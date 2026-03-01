@@ -37,7 +37,12 @@ def _now_iso() -> str:
 def _normalize_counselors_output(
     output_dir: Path, agents: list[str], suffix: str = "-report.md"
 ) -> None:
-    """Copy agent outputs from counselors slug subdirectory to expected paths."""
+    """Copy agent outputs from counselors slug subdirectory to expected paths.
+
+    Some agents (e.g. OpenCode) write to ``report.md`` instead of
+    ``{agent}.md``.  When there is exactly one agent and the expected
+    file is missing, fall back to ``report.md``.
+    """
     slug_dirs = sorted(
         (d for d in output_dir.iterdir() if d.is_dir()),
         key=lambda d: d.stat().st_mtime,
@@ -49,6 +54,10 @@ def _normalize_counselors_output(
     for agent in agents:
         src = slug_dir / f"{agent}.md"
         dst = output_dir / f"{agent}{suffix}"
+        if not src.exists() and len(agents) == 1:
+            fallback = slug_dir / "report.md"
+            if fallback.exists():
+                src = fallback
         if src.exists() and not dst.exists():
             shutil.copy2(src, dst)
 
