@@ -43,13 +43,41 @@ def resolve_counselors_cmd() -> list[str]:
 
 
 def list_available_agents() -> list[str]:
-    """Run ``counselors ls --json`` and return list of agent ID strings."""
-    cmd = [*resolve_counselors_cmd(), "ls", "--json"]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    """Run ``counselors ls`` and return list of agent ID strings.
+
+    Tries ``--json`` first; falls back to parsing the plain-text listing
+    (lines like ``  agent-name (path)``) when the flag is not supported.
+    """
+    base = resolve_counselors_cmd()
+
+    # Try JSON mode first.
+    result = subprocess.run(
+        [*base, "ls", "--json"], capture_output=True, text=True,
+    )
+    if result.returncode == 0:
+        try:
+            payload = json.loads(result.stdout)
+            return [entry["id"] for entry in payload]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            pass  # fall through to plain-text parsing
+
+    # Fall back to plain-text output.
+    import re
+
+    result = subprocess.run([*base, "ls"], capture_output=True, text=True)
     if result.returncode != 0:
         raise CounselorsError(result.stderr, stderr=result.stderr)
-    payload = json.loads(result.stdout)
-    return [entry["id"] for entry in payload]
+
+    # Strip ANSI escape codes and parse "  agent-id (path)" lines.
+    ansi_re = re.compile(r"\x1b\[[0-9;]*m")
+    agents: list[str] = []
+    for line in result.stdout.splitlines():
+        clean = ansi_re.sub("", line).strip()
+        if clean and "(" in clean:
+            agent_id = clean.split("(")[0].strip()
+            if agent_id:
+                agents.append(agent_id)
+    return agents
 
 
 def validate_agents(requested: list[str], available: list[str]) -> list[str]:

@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+import shutil
+
 from ivory_tower.counselors import CounselorsError, run_counselors
 from ivory_tower.models import (
     AgentResult,
@@ -41,6 +43,35 @@ class RunConfig:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _normalize_counselors_output(
+    output_dir: Path, agents: list[str], suffix: str = "-report.md"
+) -> None:
+    """Copy agent outputs from counselors slug subdirectory to expected paths.
+
+    counselors writes: ``output_dir/<slug>/<agent>.md``
+    The engine expects: ``output_dir/<agent><suffix>``
+
+    Finds the most-recently-created slug subdirectory and copies each agent's
+    ``.md`` file to the expected location.
+    """
+    # Find the slug subdirectory (there should be exactly one new one)
+    slug_dirs = sorted(
+        (d for d in output_dir.iterdir() if d.is_dir()),
+        key=lambda d: d.stat().st_mtime,
+        reverse=True,
+    )
+    if not slug_dirs:
+        return
+
+    slug_dir = slug_dirs[0]
+
+    for agent in agents:
+        src = slug_dir / f"{agent}.md"
+        dst = output_dir / f"{agent}{suffix}"
+        if src.exists() and not dst.exists():
+            shutil.copy2(src, dst)
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +109,9 @@ def run_phase1(run_dir: Path, config: RunConfig, manifest: Manifest) -> Manifest
         research.duration_seconds = time.monotonic() - t0
         manifest.save(run_dir / "manifest.json")
         raise
+
+    # Normalize counselors output: copy <slug>/<agent>.md -> <agent>-report.md
+    _normalize_counselors_output(phase1_dir, config.agents, suffix="-report.md")
 
     elapsed = time.monotonic() - t0
     research.status = PhaseStatus.COMPLETE
@@ -127,13 +161,25 @@ def _run_single_refinement(
     prompt_file = run_dir / "phase2" / f"{session_key}-prompt.md"
     prompt_file.write_text(prompt_text)
 
+    # Use a dedicated subdirectory per session so slug dirs don't collide
+    session_out_dir = phase2_dir / f"{session_key}-out"
+    session_out_dir.mkdir(parents=True, exist_ok=True)
+
     t0 = time.monotonic()
     run_counselors(
         prompt_file=prompt_file,
         agents=[agent],
-        output_dir=phase2_dir,
+        output_dir=session_out_dir,
         verbose=config.verbose,
     )
+
+    # Copy agent output from counselors slug subdir -> phase2/<session_key>.md
+    _normalize_counselors_output(session_out_dir, [agent], suffix=".md")
+    agent_out = session_out_dir / f"{agent}.md"
+    final_out = phase2_dir / f"{session_key}.md"
+    if agent_out.exists() and not final_out.exists():
+        shutil.copy2(agent_out, final_out)
+
     return session_key, time.monotonic() - t0
 
 
@@ -215,6 +261,14 @@ def run_phase3(run_dir: Path, config: RunConfig, manifest: Manifest) -> Manifest
         output_dir=phase3_dir,
         verbose=config.verbose,
     )
+
+    # Normalize: copy synthesizer output -> final-report.md
+    _normalize_counselors_output(phase3_dir, [config.synthesizer], suffix=".md")
+    synth_out = phase3_dir / f"{config.synthesizer}.md"
+    final_report = phase3_dir / "final-report.md"
+    if synth_out.exists() and not final_report.exists():
+        shutil.copy2(synth_out, final_report)
+
     elapsed = time.monotonic() - t0
 
     sp.status = PhaseStatus.COMPLETE
