@@ -1,0 +1,75 @@
+
+> build · claude-opus-4-6
+
+→ Read research/20260301-205639-9930ab/phase1/20260301-205639-9930ab/prompt.md
+
+# Todos
+[ ] Research WebSocket protocol details, specs, and current state
+[ ] Research SSE protocol details, specs, and current state
+[ ] Research browser support comparison for both technologies
+[ ] Research scalability trade-offs and benchmarks
+[ ] Research decision frameworks and when to choose each
+[ ] Write comprehensive research report
+
+# Todos
+[ ] Research WebSocket protocol details, specs, and current state
+[ ] Research SSE protocol details, specs, and current state
+[ ] Research browser support comparison for both technologies
+[ ] Research scalability trade-offs and benchmarks
+[ ] Research decision frameworks and when to choose each
+[ ] Write comprehensive research report
+
+% WebFetch https://datatracker.ietf.org/doc/html/rfc6455
+% WebFetch https://html.spec.whatwg.org/multipage/server-sent-events.html
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events
+
+# Todos
+[x] Research WebSocket protocol details, specs, and current state
+[x] Research SSE protocol details, specs, and current state
+[ ] Research browser support comparison for both technologies
+[ ] Research scalability trade-offs and benchmarks
+[ ] Research decision frameworks and when to choose each
+[ ] Write comprehensive research report
+
+% WebFetch https://caniuse.com/websockets
+% WebFetch https://caniuse.com/eventsource
+% WebFetch https://datatracker.ietf.org/doc/html/rfc8441
+
+# Todos
+[x] Research WebSocket protocol details, specs, and current state
+[x] Research SSE protocol details, specs, and current state
+[x] Research browser support comparison for both technologies
+[ ] Research scalability trade-offs and benchmarks
+[ ] Research decision frameworks and when to choose each
+[ ] Write comprehensive research report
+
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events
+% WebFetch https://web.dev/articles/eventsource-basics
+✗ webfetch failed
+Error: Request failed with status code: 404
+% WebFetch https://ably.com/topic/server-sent-events
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/WebTransport_API
+
+# Todos
+[x] Research WebSocket protocol details, specs, and current state
+[x] Research SSE protocol details, specs, and current state
+[x] Research browser support comparison for both technologies
+[x] Research scalability trade-offs and benchmarks
+[x] Research decision frameworks and when to choose each
+[ ] Write comprehensive research report
+
+$ ls /Users/auk000v/dev/tools/ivory-tower/research/20260301-205639-9930ab/phase1/20260301-205639-9930ab/
+prompt.md
+
+← Write research/20260301-205639-9930ab/phase1/20260301-205639-9930ab/report.md
+Wrote file successfully.
+
+# Todos
+[x] Research WebSocket protocol details, specs, and current state
+[x] Research SSE protocol details, specs, and current state
+[x] Research browser support comparison for both technologies
+[x] Research scalability trade-offs and benchmarks
+[x] Research decision frameworks and when to choose each
+[x] Write comprehensive research report
+

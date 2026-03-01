@@ -1,0 +1,71 @@
+{
+  "run_id": "20260301-211054-b6aff6",
+  "strategy": "adversarial",
+  "topic": "Compare WebSocket vs Server-Sent Events (SSE) for real-time web applications. Cover: protocol differences, browser support, scalability trade-offs, and when to choose each.",
+  "agents": [
+    "claude-opus",
+    "opencode-wibey-opus-4-6"
+  ],
+  "synthesizer": "claude-opus",
+  "flags": {
+    "raw": false,
+    "instructions": null,
+    "verbose": true,
+    "max_rounds": 2
+  },
+  "phases": {
+    "seed_generation": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "duration_seconds": null,
+      "agents": {
+        "claude-opus": {
+          "status": "pending",
+          "duration_seconds": null,
+          "output": "phase1/claude-opus-seed.md"
+        },
+        "opencode-wibey-opus-4-6": {
+          "status": "pending",
+          "duration_seconds": null,
+          "output": "phase1/opencode-wibey-opus-4-6-seed.md"
+        }
+      }
+    },
+    "adversarial_optimization": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "duration_seconds": null,
+      "seeds": {
+        "claude-opus": {
+          "status": "pending",
+          "judge": "opencode-wibey-opus-4-6",
+          "rounds_completed": 0,
+          "seed_score": null,
+          "final_score": null,
+          "output": "phase2/claude-opus-optimized.md",
+          "log": "phase2/claude-opus-optimization-log.json"
+        },
+        "opencode-wibey-opus-4-6": {
+          "status": "pending",
+          "judge": "claude-opus",
+          "rounds_completed": 0,
+          "seed_score": null,
+          "final_score": null,
+          "output": "phase2/opencode-wibey-opus-4-6-optimized.md",
+          "log": "phase2/opencode-wibey-opus-4-6-optimization-log.json"
+        }
+      }
+    },
+    "synthesis": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "duration_seconds": null,
+      "agent": "claude-opus",
+      "output": "phase3/final-report.md"
+    }
+  },
+  "total_duration_seconds": null
+}

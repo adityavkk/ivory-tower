@@ -1,0 +1,53 @@
+
+> build · claude-haiku-4-5-20251001
+
+→ Read research/20260301-212129-06e860/phase2/judging/round-03-opencode-anthropic-fast-judges-opencode-openai-fast/round-03-opencode-anthropic-fast-judges-/prompt.md
+→ Read research/20260301-212129-06e860/phase2/opencode-openai-fast-improve-round-03/opencode-openai-fast-improve-round-03/prompt.md
+
+$ find /Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2 -name "*.md" -type f | head -20
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-03-opencode-anthropic-fast-judges-opencode-openai-fast/judge-prompt.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-03-opencode-anthropic-fast-judges-opencode-openai-fast/round-03-opencode-anthropic-fast-judges-/prompt.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-02-opencode-anthropic-fast-judges-opencode-openai-fast/round-02-opencode-anthropic-fast-judges-/summary.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-02-opencode-anthropic-fast-judges-opencode-openai-fast/round-02-opencode-anthropic-fast-judges-/prompt.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-02-opencode-anthropic-fast-judges-opencode-openai-fast/round-02-opencode-anthropic-fast-judges-/opencode-anthropic-fast.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-02-opencode-anthropic-fast-judges-opencode-openai-fast/judge-prompt.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-02-opencode-anthropic-fast-judges-opencode-openai-fast.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-01-opencode-openai-fast-judges-opencode-anthropic-fast/judge-prompt.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-01-opencode-openai-fast-judges-opencode-anthropic-fast/round-01-opencode-openai-fast-judges-ope/summary.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-01-opencode-openai-fast-judges-opencode-anthropic-fast/round-01-opencode-openai-fast-judges-ope/prompt.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-01-opencode-openai-fast-judges-opencode-anthropic-fast/round-01-opencode-openai-fast-judges-ope/opencode-openai-fast.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-02-opencode-openai-fast-judges-opencode-anthropic-fast.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-01-opencode-anthropic-fast-judges-opencode-openai-fast/round-01-opencode-anthropic-fast-judges-/summary.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-01-opencode-anthropic-fast-judges-opencode-openai-fast/round-01-opencode-anthropic-fast-judges-/prompt.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-01-opencode-anthropic-fast-judges-opencode-openai-fast/round-01-opencode-anthropic-fast-judges-/opencode-anthropic-fast.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-01-opencode-anthropic-fast-judges-opencode-openai-fast/judge-prompt.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-03-opencode-openai-fast-judges-opencode-anthropic-fast/judge-prompt.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-03-opencode-openai-fast-judges-opencode-anthropic-fast/round-03-opencode-openai-fast-judges-ope/prompt.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-01-opencode-openai-fast-judges-opencode-anthropic-fast.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-02-opencode-openai-fast-judges-opencode-anthropic-fast/round-02-opencode-openai-fast-judges-ope/summary.md
+
+$ ls -la /Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/opencode-openai-fast-improve-round-03/opencode-openai-fast-improve-round-03/
+total 64
+drwxr-xr-x  7 auk000v  staff   224 Mar  1 16:25 .
+drwxr-xr-x  4 auk000v  staff   128 Mar  1 16:24 ..
+-rw-r--r--  1 auk000v  staff  6733 Mar  1 16:25 opencode-openai-fast.md
+-rw-r--r--  1 auk000v  staff  1367 Mar  1 16:25 opencode-openai-fast.stderr
+-rw-r--r--  1 auk000v  staff  9034 Mar  1 16:24 prompt.md
+-rw-r--r--  1 auk000v  staff   764 Mar  1 16:25 run.json
+-rw-r--r--  1 auk000v  staff   320 Mar  1 16:25 summary.md
+
+→ Read research/20260301-212129-06e860/phase2/opencode-openai-fast-improve-round-03/opencode-openai-fast-improve-round-03/opencode-openai-fast.md
+
+# Todos
+[ ] Create comprehensive research report on WebSocket vs SSE with required structure
+[ ] Verify all sources are primary, current, and properly cited inline
+[ ] Ensure all claims are factually accurate and well-sourced
+
+← Write research/20260301-212129-06e860/phase2/opencode-openai-fast-improve-round-03/opencode-openai-fast-improve-round-03/report.md
+Wrote file successfully.
+
+# Todos
+[x] Create comprehensive research report on WebSocket vs SSE with required structure
+[x] Verify all sources are primary, current, and properly cited inline
+[x] Ensure all claims are factually accurate and well-sourced
+

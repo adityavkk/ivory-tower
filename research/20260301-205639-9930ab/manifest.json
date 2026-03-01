@@ -1,0 +1,71 @@
+{
+  "run_id": "20260301-205639-9930ab",
+  "strategy": "adversarial",
+  "topic": "Compare WebSocket vs Server-Sent Events (SSE) for real-time web applications. Cover: protocol differences, browser support, scalability trade-offs, and when to choose each.",
+  "agents": [
+    "claude-opus",
+    "opencode-wibey-opus-4-6"
+  ],
+  "synthesizer": "claude-opus",
+  "flags": {
+    "raw": false,
+    "instructions": null,
+    "verbose": true,
+    "max_rounds": 2
+  },
+  "phases": {
+    "seed_generation": {
+      "status": "complete",
+      "started_at": "2026-03-01T20:56:39.387258+00:00",
+      "completed_at": "2026-03-01T21:02:51.972071+00:00",
+      "duration_seconds": 372.5842204579967,
+      "agents": {
+        "claude-opus": {
+          "status": "complete",
+          "duration_seconds": 372.5842204579967,
+          "output": "phase1/claude-opus-seed.md"
+        },
+        "opencode-wibey-opus-4-6": {
+          "status": "complete",
+          "duration_seconds": 372.5842204579967,
+          "output": "phase1/opencode-wibey-opus-4-6-seed.md"
+        }
+      }
+    },
+    "adversarial_optimization": {
+      "status": "partial",
+      "started_at": "2026-03-01T21:02:51.976075+00:00",
+      "completed_at": "2026-03-01T21:02:51.985784+00:00",
+      "duration_seconds": 0.009390708000864834,
+      "seeds": {
+        "claude-opus": {
+          "status": "partial",
+          "judge": "opencode-wibey-opus-4-6",
+          "rounds_completed": 0,
+          "seed_score": null,
+          "final_score": null,
+          "output": "phase2/claude-opus-optimized.md",
+          "log": "phase2/claude-opus-optimization-log.json"
+        },
+        "opencode-wibey-opus-4-6": {
+          "status": "partial",
+          "judge": "claude-opus",
+          "rounds_completed": 0,
+          "seed_score": null,
+          "final_score": null,
+          "output": "phase2/opencode-wibey-opus-4-6-optimized.md",
+          "log": "phase2/opencode-wibey-opus-4-6-optimization-log.json"
+        }
+      }
+    },
+    "synthesis": {
+      "status": "complete",
+      "started_at": "2026-03-01T21:02:51.986305+00:00",
+      "completed_at": "2026-03-01T21:09:12.925553+00:00",
+      "duration_seconds": 380.9262354579987,
+      "agent": "claude-opus",
+      "output": "phase3/final-report.md"
+    }
+  },
+  "total_duration_seconds": 753.5386345829756
+}

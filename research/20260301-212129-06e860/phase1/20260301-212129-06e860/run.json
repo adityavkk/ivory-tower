@@ -1,0 +1,27 @@
+{
+  "timestamp": "2026-03-01T21:23:13.437Z",
+  "slug": "20260301-212129-06e860",
+  "prompt": "file:research-prompt.md",
+  "promptSource": "file",
+  "readOnlyPolicy": "bestEffort",
+  "tools": [
+    {
+      "toolId": "opencode-anthropic-fast",
+      "status": "success",
+      "exitCode": 0,
+      "durationMs": 103737,
+      "wordCount": 374,
+      "outputFile": "/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase1/20260301-212129-06e860/opencode-anthropic-fast.md",
+      "stderrFile": "/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase1/20260301-212129-06e860/opencode-anthropic-fast.stderr"
+    },
+    {
+      "toolId": "opencode-openai-fast",
+      "status": "success",
+      "exitCode": 0,
+      "durationMs": 20233,
+      "wordCount": 886,
+      "outputFile": "/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase1/20260301-212129-06e860/opencode-openai-fast.md",
+      "stderrFile": "/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase1/20260301-212129-06e860/opencode-openai-fast.stderr"
+    }
+  ]
+}

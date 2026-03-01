@@ -1,0 +1,31 @@
+
+> build · gpt-5.3-codex-spark
+
+→ Read research/20260301-212129-06e860/phase1/20260301-212129-06e860/prompt.md
+% WebFetch https://html.spec.whatwg.org/multipage/server-sent-events.html#server-sent-events
+% WebFetch https://datatracker.ietf.org/doc/html/rfc6455
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/EventSource
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/WebSocket
+% WebFetch https://html.spec.whatwg.org/multipage/web-sockets.html#network
+% WebFetch https://caniuse.com/eventsource
+% WebFetch https://caniuse.com/websockets
+% WebFetch https://docs.aws.amazon.com/apigateway/latest/developerguide/websocket-api.html
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events
+✗ webfetch failed
+Error: Request failed with status code: 404
+% WebFetch https://developers.cloudflare.com/workers/configuration/websockets/
+% WebFetch https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-websocket-api.html
+% WebFetch https://datatracker.ietf.org/doc/html/rfc8441
+% WebFetch https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html
+% WebFetch https://nginx.org/en/docs/http/websocket.html
+% WebFetch https://nginx.org/en/docs/http/ngx_http_proxy_module.html
+% WebFetch https://dev.to
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/WebSocketStream
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/EventSource/readyState
+% WebFetch https://nodejs.org/api/http.html#http_event_upgrade
+% WebFetch https://datatracker.ietf.org/doc/html/rfc7230
+% WebFetch https://docs.aws.amazon.com/apigateway/latest/developerguide/websocket-api-apis.html
+% WebFetch https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-websocket-api-develop-routes.html
+% WebFetch https://docs.aws.amazon.com/apigateway/latest/developerguide/websocket-api-scaling.html
+% WebFetch https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-limits.html
+% WebFetch https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-websocket-api-flows.html

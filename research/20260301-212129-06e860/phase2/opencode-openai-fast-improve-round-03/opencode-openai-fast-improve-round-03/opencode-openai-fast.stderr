@@ -1,0 +1,22 @@
+
+> build · gpt-5.3-codex-spark
+
+→ Read research/20260301-212129-06e860/phase2/opencode-openai-fast-improve-round-03/opencode-openai-fast-improve-round-03/prompt.md
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/WebSocket
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/EventSource
+% WebFetch https://html.spec.whatwg.org/multipage/server-sent-events.html
+% WebFetch https://www.rfc-editor.org/rfc/rfc6455
+% WebFetch https://www.rfc-editor.org/rfc/rfc8441
+% WebFetch https://www.rfc-editor.org/rfc/rfc7230
+% WebFetch https://html.spec.whatwg.org/multipage/web-sockets.html
+% WebFetch https://caniuse.com/eventsource
+% WebFetch https://caniuse.com/websockets
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/WebSocketStream
+% WebFetch https://nodejs.org/api/http.html#http_event_upgrade
+% WebFetch https://nginx.org/en/docs/http/websocket.html
+% WebFetch https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-websocket-api.html
+% WebFetch https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html
+% WebFetch https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html#apigateway-websocket-api-limits
+% WebFetch https://www.rfc-editor.org/rfc/rfc6455#section-5
+% WebFetch https://www.w3.org/TR/websockets/

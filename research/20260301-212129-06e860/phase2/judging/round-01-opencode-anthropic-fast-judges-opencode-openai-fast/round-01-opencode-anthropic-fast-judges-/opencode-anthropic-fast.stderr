@@ -1,0 +1,91 @@
+
+> build · claude-haiku-4-5-20251001
+
+→ Read research/20260301-212129-06e860/phase2/judging/round-01-opencode-anthropic-fast-judges-opencode-openai-fast/round-01-opencode-anthropic-fast-judges-/prompt.md
+✱ Glob "/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-01-opencode-anthropic-fast-judges-opencode-openai-fast/round-01-opencode-anthropic-fast-judges-/**/*.md" 0 matches
+
+$ find /Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-01-opencode-anthropic-fast-judges-opencode-openai-fast -type f -name "*.md" 2>/dev/null | head -20
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-01-opencode-anthropic-fast-judges-opencode-openai-fast/round-01-opencode-anthropic-fast-judges-/prompt.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-01-opencode-anthropic-fast-judges-opencode-openai-fast/judge-prompt.md
+
+$ ls -la /Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/judging/round-01-opencode-anthropic-fast-judges-opencode-openai-fast/round-01-opencode-anthropic-fast-judges-/ 2>/dev/null
+total 24
+drwxr-xr-x  3 auk000v  staff    96 Mar  1 16:23 .
+drwxr-xr-x  4 auk000v  staff   128 Mar  1 16:23 ..
+-rw-r--r--  1 auk000v  staff  9439 Mar  1 16:23 prompt.md
+
+$ find /Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860 -type f -name "report*.md" -o -name "*report*.md" 2>/dev/null
+
+$ ls -la /Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase2/
+total 0
+drwxr-xr-x  3 auk000v  staff   96 Mar  1 16:23 .
+drwxr-xr-x  9 auk000v  staff  288 Mar  1 16:21 ..
+drwxr-xr-x  6 auk000v  staff  192 Mar  1 16:23 judging
+
+$ find /Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase1 -type f -name "*.md" 2>/dev/null
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase1/opencode-openai-fast-seed.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase1/20260301-212129-06e860/summary.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase1/20260301-212129-06e860/RESEARCH_REPORT.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase1/20260301-212129-06e860/prompt.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase1/20260301-212129-06e860/opencode-openai-fast.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase1/20260301-212129-06e860/opencode-anthropic-fast.md
+/Users/auk000v/dev/tools/ivory-tower/research/20260301-212129-06e860/phase1/opencode-anthropic-fast-seed.md
+
+→ Read research/20260301-212129-06e860/phase1/20260301-212129-06e860/RESEARCH_REPORT.md
+
+# Todos
+[ ] Evaluate Factual Accuracy dimension
+[ ] Evaluate Depth of Analysis dimension
+[ ] Evaluate Source Quality dimension
+[ ] Evaluate Coverage Breadth dimension
+[ ] Evaluate Analytical Rigor dimension
+[ ] Compile final JSON evaluation
+
+# Todos
+[x] Evaluate Factual Accuracy dimension
+[ ] Evaluate Depth of Analysis dimension
+[ ] Evaluate Source Quality dimension
+[ ] Evaluate Coverage Breadth dimension
+[ ] Evaluate Analytical Rigor dimension
+[ ] Compile final JSON evaluation
+
+# Todos
+[x] Evaluate Factual Accuracy dimension
+[x] Evaluate Depth of Analysis dimension
+[ ] Evaluate Source Quality dimension
+[ ] Evaluate Coverage Breadth dimension
+[ ] Evaluate Analytical Rigor dimension
+[ ] Compile final JSON evaluation
+
+# Todos
+[x] Evaluate Factual Accuracy dimension
+[x] Evaluate Depth of Analysis dimension
+[x] Evaluate Source Quality dimension
+[ ] Evaluate Coverage Breadth dimension
+[ ] Evaluate Analytical Rigor dimension
+[ ] Compile final JSON evaluation
+
+# Todos
+[x] Evaluate Factual Accuracy dimension
+[x] Evaluate Depth of Analysis dimension
+[x] Evaluate Source Quality dimension
+[x] Evaluate Coverage Breadth dimension
+[ ] Evaluate Analytical Rigor dimension
+[ ] Compile final JSON evaluation
+
+# Todos
+[x] Evaluate Factual Accuracy dimension
+[x] Evaluate Depth of Analysis dimension
+[x] Evaluate Source Quality dimension
+[x] Evaluate Coverage Breadth dimension
+[x] Evaluate Analytical Rigor dimension
+[ ] Compile final JSON evaluation
+
+# Todos
+[x] Evaluate Factual Accuracy dimension
+[x] Evaluate Depth of Analysis dimension
+[x] Evaluate Source Quality dimension
+[x] Evaluate Coverage Breadth dimension
+[x] Evaluate Analytical Rigor dimension
+[x] Compile final JSON evaluation
+

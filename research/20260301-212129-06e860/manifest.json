@@ -1,0 +1,71 @@
+{
+  "run_id": "20260301-212129-06e860",
+  "strategy": "adversarial",
+  "topic": "Compare WebSocket vs Server-Sent Events (SSE) for real-time web applications. Cover: protocol differences, browser support, scalability trade-offs, and when to choose each.",
+  "agents": [
+    "opencode-anthropic-fast",
+    "opencode-openai-fast"
+  ],
+  "synthesizer": "opencode-anthropic-fast",
+  "flags": {
+    "raw": false,
+    "instructions": null,
+    "verbose": true,
+    "max_rounds": 2
+  },
+  "phases": {
+    "seed_generation": {
+      "status": "complete",
+      "started_at": "2026-03-01T21:21:29.403825+00:00",
+      "completed_at": "2026-03-01T21:23:13.449246+00:00",
+      "duration_seconds": 104.0472754999937,
+      "agents": {
+        "opencode-anthropic-fast": {
+          "status": "complete",
+          "duration_seconds": 104.0472754999937,
+          "output": "phase1/opencode-anthropic-fast-seed.md"
+        },
+        "opencode-openai-fast": {
+          "status": "complete",
+          "duration_seconds": 104.0472754999937,
+          "output": "phase1/opencode-openai-fast-seed.md"
+        }
+      }
+    },
+    "adversarial_optimization": {
+      "status": "complete",
+      "started_at": "2026-03-01T21:23:13.449671+00:00",
+      "completed_at": "2026-03-01T21:26:30.596333+00:00",
+      "duration_seconds": 197.1506534589862,
+      "seeds": {
+        "opencode-anthropic-fast": {
+          "status": "complete",
+          "judge": "opencode-openai-fast",
+          "rounds_completed": 3,
+          "seed_score": 0.0,
+          "final_score": 0.0,
+          "output": "phase2/opencode-anthropic-fast-optimized.md",
+          "log": "phase2/opencode-anthropic-fast-optimization-log.json"
+        },
+        "opencode-openai-fast": {
+          "status": "complete",
+          "judge": "opencode-anthropic-fast",
+          "rounds_completed": 3,
+          "seed_score": 0.0,
+          "final_score": 0.0,
+          "output": "phase2/opencode-openai-fast-optimized.md",
+          "log": "phase2/opencode-openai-fast-optimization-log.json"
+        }
+      }
+    },
+    "synthesis": {
+      "status": "complete",
+      "started_at": "2026-03-01T21:26:30.597926+00:00",
+      "completed_at": "2026-03-01T21:28:06.083398+00:00",
+      "duration_seconds": 95.48437929200009,
+      "agent": "opencode-anthropic-fast",
+      "output": "phase3/final-report.md"
+    }
+  },
+  "total_duration_seconds": 396.6894256660016
+}
