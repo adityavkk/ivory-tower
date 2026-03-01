@@ -1,0 +1,979 @@
+2026-03-01T20:05:17.787616Z ERROR codex_core::codex: failed to load skill /Users/auk000v/.claude/skills/pr-reviewer/SKILL.md: invalid YAML: block sequence entries are not allowed in this context at line 12 column 17
+2026-03-01T20:05:17.787641Z ERROR codex_core::codex: failed to load skill /Users/auk000v/.claude/skills/show-toast/SKILL.md: invalid YAML: mapping values are not allowed in this context at line 13 column 105
+2026-03-01T20:05:17.787643Z ERROR codex_core::codex: failed to load skill /Users/auk000v/.claude/skills/file-validator/SKILL.md: invalid YAML: block sequence entries are not allowed in this context at line 12 column 17
+2026-03-01T20:05:17.787645Z ERROR codex_core::codex: failed to load skill /Users/auk000v/.claude/skills/bigquery-explorer/SKILL.md: invalid YAML: block sequence entries are not allowed in this context at line 12 column 18
+OpenAI Codex v0.106.0 (research preview)
+--------
+workdir: /Users/auk000v/dev/tools/ivory-tower
+model: gpt-5.3-codex
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: xhigh
+reasoning summaries: none
+session id: 019cab01-5aa0-7fd0-8e81-011f168dd92a
+--------
+user
+Read the file at /Users/auk000v/dev/tools/ivory-tower/research/20260301-200517-a4a45a/phase1/20260301-200517-a4a45a/prompt.md and follow the instructions within it.
+mcp startup: no servers
+
+thinking
+**Acknowledging request and preparing to read file**
+codex
+I’ll open the specified `prompt.md`, extract its instructions, and then execute them step by step in this workspace. I’m starting by reading that file now.
+exec
+/bin/zsh -lc 'cat /Users/auk000v/dev/tools/ivory-tower/research/20260301-200517-a4a45a/phase1/20260301-200517-a4a45a/prompt.md' in /Users/auk000v/dev/tools/ivory-tower succeeded in 52ms:
+# Deep Research Task
+
+## Topic
+How can I use Harbor (https://github.com/av/harbor) and inspect-harbor (the Inspect AI integration/bridge for Harbor) to build a general-purpose eval runner that can run different agent solvers against different benchmarks like Spider2, LongMemEval, and others? Specifically research: (1) Harbor's architecture - how it orchestrates agent backends, services, and eval tasks; (2) inspect-harbor's role as the bridge between Inspect AI's eval framework and Harbor's service management; (3) how to define and register new agent solvers (e.g. wrapping a custom agent as a Harbor-compatible solver); (4) how to define and register new benchmarks/datasets (e.g. integrating Spider2 and LongMemEval task suites); (5) the eval execution pipeline - how Harbor manages the lifecycle of running a solver against a benchmark; (6) practical architecture for a general-purpose eval runner that can mix-and-match solvers and benchmarks; (7) existing examples and patterns from Harbor's built-in eval support; (8) gaps, limitations, and areas where custom engineering would be needed.
+
+## Methodology
+- Use web search extensively to find current, authoritative sources
+- Prefer primary sources (papers, official docs, original announcements) over secondary commentary
+- Check publication dates -- prefer sources from the last 2 years where relevant
+- When making claims, note your source
+- If you find contradictory information, present both sides with sources
+
+## Output Requirements
+- Write a comprehensive research report
+- Include a Sources section with URLs at the end
+- Note gaps in your research -- areas where you couldn't find solid information
+
+thinking
+**Planning comprehensive Harbor research**
+codex
+I’ve read the task file and will produce a source-backed research report focused on Harbor and inspect-harbor architecture, extension points, and eval pipeline design. Next I’m collecting primary sources from the Harbor repo, inspect-harbor package/repo, and Inspect AI docs, then I’ll synthesize them into an implementation-oriented design with limitations and gaps called out.
+Plan update
+This task needs broad source collection and cross-referencing before writing the final report.
+  → Gather primary sources for Harbor architecture and built-in eval patterns
+  • Gather primary sources for inspect-harbor integration with Inspect AI
+  • Extract extension workflows for adding solvers and benchmarks
+  • Synthesize eval lifecycle and propose general-purpose runner architecture
+  • Draft comprehensive report with explicit gaps and source URLs
+🌐 Searching the web...
+🌐 Searched: av/harbor GitHub architecture eval services backends README
+
+thinking
+**Refining search scope**
+codex
+I’m seeing multiple unrelated “Harbor” projects in generic search results, so I’m narrowing to authoritative sources: the `av/harbor` repo, `inspect-harbor` package/repo, and Inspect AI docs.
+🌐 Searching the web...
+🌐 Searched: av harbor github
+
+thinking
+**Researching inspect-harbor package**
+🌐 Searching the web...
+🌐 Searched: "inspect-harbor" "GitHub" "Inspect AI"
+
+thinking
+**Verifying package source repository**
+🌐 Searching the web...
+🌐 Searched: https://pypi.org/project/inspect-harbor/
+
+thinking
+**Planning source and docs inspection**
+🌐 Searching the web...
+🌐 Searched: https://github.com/meridianlabs-ai/inspect_harbor
+
+thinking
+**Reviewing documentation sources**
+🌐 Searching the web...
+🌐 Searched: https://harborframework.com/docs/tasks
+
+thinking
+**Clarifying Harbor project distinctions**
+🌐 Searching the web...
+🌐 Searched: https://github.com/av/harbor
+
+thinking
+**Exploring README for evaluation details**
+🌐 Searching the web...
+🌐 Searched: https://github.com/av/harbor
+
+thinking
+**Inspecting architecture docs and README**
+🌐 Searching the web...
+🌐 Searched: https://raw.githubusercontent.com/av/harbor/main/README.md
+
+thinking
+**Evaluating GitHub file access methods**
+codex
+I now have a good initial source set and I’m drilling into code-level artifacts in `inspect_harbor` and Harbor docs to map the actual execution pipeline and extension points, not just README summaries.
+🌐 Searching the web...
+🌐 Searched: https://github.com/meridianlabs-ai/inspect_harbor/tree/main/src/inspect_harbor
+
+thinking
+**Deciding GitHub wiki raw usage**
+🌐 Searching the web...
+🌐 Searched: 'Harbor User Guide' in https://github.com/av/harbor/wiki
+
+thinking
+**Planning multi-click navigation**
+🌐 Searching the web...
+🌐 Searched: https://github.com/av/harbor/wiki/1.-Harbor-User-Guide
+
+thinking
+**Exploring GitHub API for file listing**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Planning URL search retrieval**
+🌐 Searching the web...
+🌐 Searched: api.github.com repos meridianlabs-ai inspect_harbor contents src inspect_harbor
+
+thinking
+**Evaluating URL-based file access**
+🌐 Searching the web...
+🌐 Searched: '__init__.py' in https://github.com/meridianlabs-ai/inspect_harbor
+
+thinking
+**Gathering task documentation links**
+🌐 Searching the web...
+🌐 Searched: https://github.com/meridianlabs-ai/inspect_harbor/blob/main/REGISTRY.md
+
+thinking
+**Opening URLs to access code lines**
+🌐 Searching the web...
+🌐 Searched: https://github.com/meridianlabs-ai/inspect_harbor/blob/main/src/inspect_harbor/harbor/_scorer.py
+
+thinking
+**Identifying raw GitHub file URL pattern**
+🌐 Searching the web...
+🌐 Searched: 'Raw' in https://github.com/meridianlabs-ai/inspect_harbor/blob/main/src/inspect_harbor/harbor/_scorer.py
+
+thinking
+**Forming raw URL search queries**
+🌐 Searching the web...
+🌐 Searched: https://raw.githubusercontent.com/meridianlabs-ai/inspect_harbor/main/src/inspect_harbor/harbor/_scorer.py
+
+thinking
+**Evaluating raw URL search approach**
+codex
+I hit an issue extracting raw source files from GitHub’s rendered pages, so I’m switching to alternative primary sources (Inspect Harbor docs + package metadata + Harbor framework docs + av/harbor wiki) and cross-checking with CLI/task examples to reconstruct the integration points accurately.
+🌐 Searching the web...
+🌐 Searched: github.com/meridianlabs-ai/inspect_harbor/raw/main/src/inspect_harbor/harbor/_scorer.py
+
+thinking
+**Assessing alternative inspect-harbor access**
+🌐 Searching the web...
+🌐 Searched: meridianlabs-ai.github.io inspect_harbor documentation
+
+thinking
+**Identifying potential documentation URL**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Assessing documentation URL access**
+🌐 Searching the web...
+🌐 Searched: "https://meridianlabs-ai.github.io/inspect_harbor/"
+
+thinking
+**Testing package import availability**
+codex
+I’m now checking whether `inspect_harbor` is already available in this environment so I can inspect its actual Python modules directly and avoid relying only on rendered docs.
+
+thinking
+**Testing here-doc alternative**
+exec
+/bin/zsh -lc "python -c \"import importlib.util as u;mods=['inspect_harbor','inspect_ai','harbor'];print('\\n'.join(f'{m} {\"FOUND\" if u.find_spec(m) else \"MISSING\"} {getattr(u.find_spec(m),\"origin\",None)}' for m in mods))\"" in /Users/auk000v/dev/tools/ivory-tower exited 127 in 52ms:
+zsh:1: command not found: python
+
+thinking
+**Testing Python3 command availability**
+
+thinking
+**Adjusting command quoting**
+exec
+/bin/zsh -lc "python3 -c 'import importlib.util as u;mods=[\"inspect_harbor\",\"inspect_ai\",\"harbor\"];import builtins;[print(m,(\"FOUND\" if u.find_spec(m) else \"MISSING\"),getattr(u.find_spec(m),\"origin\",None)) for m in mods]'" in /Users/auk000v/dev/tools/ivory-tower succeeded in 51ms:
+python3: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead
+python3: error: couldn't create cache file '/tmp/xcrun_db-141GARYC' (errno=Operation not permitted)
+python3: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead
+python3: error: couldn't create cache file '/tmp/xcrun_db-zYyQ3RrV' (errno=Operation not permitted)
+inspect_harbor MISSING None
+inspect_ai MISSING None
+harbor MISSING None
+
+
+
+
+
+
+
+
+
+
+
+
+thinking
+**Planning web-based architecture inspection**
+thinking
+**Inspecting documentation snippets**
+thinking
+**Exploring evaluation metrics code**
+thinking
+**Identifying solver docs location**
+thinking
+**Planning package inspection**
+thinking
+**Planning harbor solver exploration**
+thinking
+**Identifying registry link locations**
+thinking
+**Gathering framework docs and patterns**
+thinking
+**Reviewing framework architecture details**
+thinking
+**Locating task runner lifecycle details**
+thinking
+**Planning task orchestration inspection**
+thinking
+**Planning deeper HarborFramework inspection**
+🌐 Searching the web...
+🌐 Searched: harborframework service register_service task runner backend model provider docs
+
+
+
+
+
+thinking
+**Searching agent registration docs**
+thinking
+**Planning open search integration**
+thinking
+**Seeking BaseAgent implementation details**
+thinking
+**Locating custom agent example page**
+thinking
+**Searching for run config docs**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Switching to direct URL opens**
+🌐 Searching the web...
+🌐 Searched the web
+
+
+thinking
+**Diagnosing invalid reference bug**
+thinking
+**Confirming bug fix and proceeding**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Identifying open result limitation**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Testing URL open behavior**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Adjusting safe list handling**
+🌐 Searching the web...
+🌐 Searched: https://harborframework.com/docs/running-jobs/trial-configuration
+
+
+
+
+
+thinking
+**Identifying detailed adapter docs**
+thinking
+**Reviewing custom agent docs**
+thinking
+**Planning agent registration page**
+thinking
+**Identifying base agent page need**
+thinking
+**Planning trial pipeline page**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Identifying missing resource causing failures**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Retrying search and opening first result**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Testing direct URL from search results**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Testing search and open call behavior**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Testing reference handling limits**
+🌐 Searching the web...
+🌐 Searched: https://harborframework.com/docs/core-concepts
+
+
+thinking
+**Exploring navigation via stable link IDs**
+thinking
+**Identifying pattern "Trial Pipeline"**
+🌐 Searching the web...
+🌐 Searched: 'Trial Pipeline'
+
+thinking
+**Assessing docs for pipeline details**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Switching to raw URL searches**
+🌐 Searching the web...
+🌐 Searched: https://raw.githubusercontent.com/wiki/av/harbor/8.2-Harbor-Compose-Setup.md
+
+thinking
+**Testing wiki search queries**
+🌐 Searching the web...
+🌐 Searched: site:github.com/av/harbor/wiki "8.4 Harbor Bench"
+
+thinking
+**Testing direct URL access**
+🌐 Searching the web...
+🌐 Searched the web
+
+thinking
+**Evaluating remote data access approach**
+codex
+I’ve collected core Inspect Harbor internals and Harbor framework docs; next I’m attempting direct raw document retrieval for specific `av/harbor` wiki pages to fill gaps around `harbor bench` and service orchestration details.
+exec
+/bin/zsh -lc 'curl -L --max-time 20 https://raw.githubusercontent.com/wiki/av/harbor/8.4-Harbor-Bench.md | head -n 120' in /Users/auk000v/dev/tools/ivory-tower succeeded in 52ms:
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0curl: (6) Could not resolve host: raw.githubusercontent.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+thinking
+**Planning data extraction from website**
+thinking
+**Locating harbor bench details**
+thinking
+**Identifying harbor compose setup area**
+thinking
+**Planning service architecture**
+thinking
+**Identifying required service ports**
+thinking
+**Planning service organization**
+thinking
+**Locating service handler code**
+thinking
+**Identifying service properties timeline**
+thinking
+**Identifying architecture image locations**
+thinking
+**Locating image definitions**
+thinking
+**Identifying profile details location**
+thinking
+**Identifying template locations**
+thinking
+**Identifying code section around 1960**
+thinking
+**Inspecting harbor tools section**
+thinking
+**Scheduling tools integration**
+thinking
+**Identifying service backend concepts**
+thinking
+**Assessing CLI and metadata sources**
+thinking
+**Identifying release date location**
+thinking
+**Planning Harbor task inspection**
+thinking
+**Identifying benchmark integration sources**
+thinking
+**Investigating registry sources**
+thinking
+**Inspecting registry task patterns**
+thinking
+**Planning list extraction approach**
+thinking
+**Parsing benchmark registration details**
+thinking
+**Identifying task function location**
+thinking
+**Identifying parameter sections to expand**
+thinking
+**Planning documentation continuation**
+thinking
+**Identifying benchmark kwargs and sample state**
+thinking
+**Identifying benchmark kwargs examples**
+thinking
+**Noting missing coverage for config setup**
+thinking
+**Identifying relevant data fields**
+thinking
+**Reviewing registry for longmemeval**
+thinking
+**Analyzing documentation patterns**
+thinking
+**Pinpointing parameter details**
+thinking
+**Identifying sample setup location**
+thinking
+**Estimating keyword argument requirements**
+thinking
+**Planning inspection of solver docs**
+thinking
+**Seeking solver registration docs**
+thinking
+**Planning task decorator search**
+thinking
+**Mapping inspect_harbor architecture**
+thinking
+**Locating default harness info**
+thinking
+**Identifying key architecture regions**
+thinking
+**Planning Harbor code exploration**
+thinking
+**Considering plugin extension scope**
+thinking
+**Planning dataset adapter doc extraction**
+thinking
+**Planning custom adapter support**
+thinking
+**Estimating adapter config sizes**
+thinking
+**Planning built-in adapters list**
+thinking
+**Identifying adapter interface location**
+thinking
+**Identifying core architecture terms**
+thinking
+**Identifying major definitions to open**
+thinking
+**Planning architecture section**
+thinking
+**Planning trial concept scope**
+thinking
+**Identifying dependency injection docs**
+thinking
+**Locating agent registration decorator**
+thinking
+**Estimating example count**
+thinking
+**Locating base agent docs**
+thinking
+**Identifying method inspection targets**
+thinking
+**Searching for custom agent example**
+thinking
+**Estimating required ports**
+thinking
+**Estimating async call requirements**
+thinking
+**Noting registration requirement**
+thinking
+**Mapping evaluation pipeline components**
+thinking
+**Inspecting benchmark class details**
+thinking
+**Assessing page content format**
+thinking
+**Investigating inspect_harbor scope and gaps**
+thinking
+**Reviewing changelog for limits**
+thinking
+**Highlighting release notes edits**
+thinking
+**Locating feature implementation lines**
+thinking
+**Outlining agent solver registration details**
+thinking
+**Opening custom solver docs**
+thinking
+**Identifying key custom solver patterns**
+thinking
+**Estimating registration resource needs**
+thinking
+**Estimating class-based solver size**
+thinking
+**Estimating async and solver needs**
+thinking
+**Searching for solver registration docs**
+thinking
+**Seeking page content patterns**
+thinking
+**Identifying dynamic 404 handling**
+thinking
+**Planning custom benchmark docs**
+thinking
+**Locating benchmark class**
+thinking
+**Estimating wrapper quantity**
+thinking
+**Estimating adapter config size**
+thinking
+**Searching docs for benchmarks**
+thinking
+**Estimating wrapper and namespace count**
+thinking
+**Noting need for HTTP 403 handling**
+thinking
+**Estimating dependency count**
+thinking
+**Exploring Harbor job and pipeline docs**
+thinking
+**Identifying phase patterns**
+thinking
+**Estimating concurrency needs**
+thinking
+**Estimating retry count**
+thinking
+**Planning CLI example and eval pipeline**
+thinking
+**Verifying trial configuration docs**
+thinking
+**Identifying key field patterns**
+thinking
+**Planning field list size**
+thinking
+**Estimating benchmark solver parameters**
+thinking
+**Estimating service config size**
+thinking
+**Preparing production baseline example**
+thinking
+**Planning job config page**
+thinking
+**Estimating required field list size**
+thinking
+**Estimating path semantics size**
+thinking
+**Estimating dependency container size**
+thinking
+**Investigating service manager docs**
+thinking
+**Considering alternative file loading methods**
+thinking
+**Planning method and config parsing**
+thinking
+**Identifying service start location**
+thinking
+**Estimating service count needs**
+thinking
+**Considering context manager for call**
+thinking
+**Planning inspection of SDK manager docs**
+thinking
+**Noting action to find patterns**
+thinking
+**Estimating resource requirements**
+thinking
+**Considering threaded service loading**
+thinking
+**Estimating resource needs**
+thinking
+**Identifying docs gap for default harness**
+thinking
+**Planning authentication handling**
+thinking
+**Searching for benchmark wrapper**
+thinking
+**Estimating evaluation requirements**
+thinking
+**Planning error handling**
+thinking
+**Estimating await_done resource needs**
+thinking
+**Identifying solver metadata source**
+thinking
+**Searching test specifications**
+thinking
+**Planning docs search for helpers**
+thinking
+**Considering function signature locations**
+thinking
+**Estimating resource needs for task**
+thinking
+**Noting sample setup size**
+thinking
+**Estimating metric requirements**
+thinking
+**Scoping docs and examples**
+thinking
+**Listing template directory contents**
+thinking
+**Reviewing benchmark readme**
+thinking
+**Inspecting template patterns**
+thinking
+**Estimating resource requirements**
+thinking
+**Estimating template and options count**
+thinking
+**Estimating template code range**
+thinking
+**Inspecting template config details**
+thinking
+**Estimating evaluation loop instructions**
+thinking
+**Estimating usage flow volume**
+thinking
+**Estimating command requirements**
+thinking
+**Estimating documentation effort**
+thinking
+**Estimating output size**
+thinking
+**Considering data processing and removal**
+thinking
+**Planning template parsing**
+thinking
+**Scanning for key patterns**
+thinking
+**Estimating resource needs**
+thinking
+**Planning pipeline inspection**
+thinking
+**Inspecting core execution pipeline**
+thinking
+**Estimating loop iteration count**
+thinking
+**Estimating pre-run requirements**
+thinking
+**Estimating target quantity**
+thinking
+**Estimating resource requirements**
+thinking
+**Inspecting template generation**
+thinking
+**Identifying placeholder substitution patterns**
+thinking
+**Clarifying load template requirement**
+thinking
+**Considering default impact scores**
+thinking
+**Estimating template validation needs**
+thinking
+**Clarifying Harbor project relations**
+thinking
+**Exploring integration points between components**
+thinking
+**Planning detailed code inspection**
+thinking
+**Identifying incomplete code near line 441**
+thinking
+**Planning comprehensive research report**
+codex
+**Research Report: Building a General-Purpose Eval Runner with Harbor + inspect-harbor**
+
+## 1. Harbor architecture (what is orchestrating what)
+
+There are two closely related but operationally different “Harbor” layers in your source set:
+
+1. `av/harbor` is an infrastructure/tooling project centered on Docker Compose service orchestration, service templates/handles, profiles, and tool wrappers (`harbor`, `harbor bench`, `harbor compose setup`). It gives you runtime service control and repeatable eval command automation. [1][2][3][4][5]  
+2. `harbor-python` / Harbor Framework docs describe typed registries and evaluation primitives (benchmarks, solvers, jobs/trials, adapters, evaluator/task runner hooks). This is the model/eval abstraction layer used by `inspect-harbor`. [18][19][20][21][22][23][24][25][26][30]
+
+This split matters: the strongest architecture is to use `av/harbor` for service/runtime management and Harbor Framework + `inspect-harbor` for typed eval execution.
+
+## 2. inspect-harbor’s role as Inspect AI bridge
+
+`inspect-harbor` is an Inspect AI plugin package (latest shown: `0.2.5`, released **January 13, 2026**) that integrates Harbor benchmark/solver concepts into Inspect tasks/solvers/scorers. [6][7]
+
+Bridge responsibilities:
+
+1. `default_harness` manages service lifecycle (local compose or hosted SDK) and then invokes `inspect_ai.eval(...)`. [8]  
+2. `HarborServiceManager` handles local Docker-compose-driven service startup/teardown and service URL discovery. [9]  
+3. `SDKServiceManager` handles hosted Harbor SDK service loading/unloading. [10]  
+4. `harbor_task` / `sample_setup` build Inspect `Task` objects from Harbor benchmark specs and service requirements. [14]  
+5. `harbor_solver` maps Inspect solver calls to Harbor solver specifications. [12]  
+6. `harbor_scorer` evaluates samples via Harbor benchmark evaluation flow and returns Inspect `Score`/metrics. [13][11]
+
+So `inspect-harbor` is the glue between Inspect AI execution and Harbor service/benchmark/solver semantics.
+
+## 3. How to define/register new agent solvers
+
+You have two extension points:
+
+1. Harbor-native solver registration: define function/class solver and register with Harbor (`@solver` patterns, registry loading, optional CLI/module registration). [22][23]  
+2. Agent registration for custom backends: implement `BaseAgent` (`call`, optional async/batch), then register (`@register_agent`) so solvers can reference it. [27][28][29]
+
+In `inspect-harbor`, you then reference the Harbor solver through `harbor_solver(solver=..., prompt=..., agent=..., tool_choice=..., solver_kwargs=...)`. [12]
+
+Practical pattern:
+1. Implement/register agent backend in Harbor Framework.
+2. Implement/register solver that targets that agent contract.
+3. In Inspect eval config, pass the Harbor solver name + kwargs through `harbor_solver(...)`.
+
+## 4. How to define/register new benchmarks/datasets (Spider2, LongMemEval, others)
+
+Harbor Framework benchmark path:
+
+1. Create benchmark class (subclass benchmark base, implement sample evaluation logic). [24]  
+2. Register benchmark (`@benchmark`) and optional wrappers for standardized variants. [25]  
+3. Use adapters to normalize dataset shape into Harbor data bundle format (`@adapter`, built-in and custom adapter workflows). [26]
+
+`inspect-harbor` task path:
+
+1. Build Inspect task via `harbor_task(...)` and `sample_setup(...)`. [14]  
+2. Existing registry tasks show the pattern for Spider2 and LongMemEval, including args like `difficulty`, `benchmark_kwargs`, `sample_kwargs`, `solver`, `service`, `limit`. [15][16][17]
+
+So for a new benchmark suite:
+1. Implement Harbor benchmark + adapter.
+2. Register benchmark/wrapper in Harbor registry.
+3. Add an `inspect-harbor` task factory (or reuse generic `harbor_task`) that maps dataset samples to Inspect states and scorer.
+
+## 5. Eval execution pipeline (solver vs benchmark lifecycle)
+
+End-to-end lifecycle (Inspect-first with `inspect-harbor`):
+
+1. Harness enters context, starts services (local compose or hosted). [8][9][10]  
+2. Inspect task starts; solver step resolves Harbor solver spec and executes solver call path. [12][14]  
+3. Scorer step creates Harbor benchmark instance/spec and evaluates samples (`evaluate_sample`, polling completion if needed). [13][11]  
+4. Metrics/scores are aggregated in Inspect output. [13]  
+5. Harness exits and tears down/unloads services. [8][9][10]
+
+Harbor-native runner lifecycle (Framework-first):
+
+1. `harbor run` loads `JobConfig` and `TrialConfig`. [19][20][21]  
+2. Evaluator coordinates tasks/trials/batch runs with configurable task runner hooks (`before_task`, `after_task`, custom runner). [30]  
+3. Results are persisted/aggregated per run settings. [19][20][21]
+
+`av/harbor` built-in `harbor bench` lifecycle is command-templated orchestration:
+1. Setup command once (often `harbor up`).
+2. Expand targets matrix and run per-target eval command.
+3. Teardown cleanup. [3][4][5]
+
+## 6. Practical architecture for a general-purpose mix-and-match eval runner
+
+Recommended architecture:
+
+1. **Control plane:** one runner service that owns experiment manifests (`solver_id`, `benchmark_id`, `service_stack`, params, seeds, limits).  
+2. **Runtime plane:** `av/harbor` profiles + compose for local backends; optional hosted mode via SDK manager. [2][9][10]  
+3. **Registry plane:** Harbor registries for solvers/benchmarks/adapters; enforce stable IDs and versioned metadata. [22][23][24][25][26]  
+4. **Execution plane:** Inspect AI + `inspect-harbor` harness/task/solver/scorer for standardized logs and scoring. [8][12][13][14]  
+5. **Matrix engine:** generate cross-product of solver x benchmark x service profile x difficulty; run in isolated trials using either Inspect loop or Harbor Job/Trial configs. [19][20][21]  
+6. **Results plane:** normalize output schema (run_id, solver_id, benchmark_id, dataset_version, service_digest, metrics, artifacts).
+
+Key design choice:
+- If you want strongest Inspect observability and custom Python control, make Inspect + `inspect-harbor` the top orchestrator.
+- If you want Harbor-native job/trial config governance, make Harbor runner primary and invoke Inspect tasks where needed.
+- Avoid dual orchestration for a single run (pick one top-level executor).
+
+## 7. Existing examples/patterns to copy
+
+1. `harbor-bench` Inspect template shows practical environment templating + setup/teardown for `inspect eval`. [4]  
+2. `harbor-bench` core execution code shows setup -> target loop -> teardown orchestration pattern. [5]  
+3. `inspect-harbor` registry includes ready task suites (including Spider2, LongMemEval) with consistent argument surfaces. [15][16][17]  
+4. Harbor adapters docs show reusable ingestion strategy for heterogeneous datasets. [26]
+
+## 8. Gaps, limitations, and custom engineering needed
+
+1. Documentation split: explicit official mapping between `av/harbor` and Harbor Framework internals is not clearly centralized; you will likely define your own integration boundary. [1][2][18]  
+2. Overlapping orchestration layers (`harbor bench`, Harbor jobs/trials, Inspect eval) can duplicate responsibilities unless you standardize ownership. [3][19][30]  
+3. Benchmark integration still needs task-specific engineering (dataset prep, sample mapping, benchmark kwargs conventions). [16][17][24][26]  
+4. Metric harmonization across benchmarks is not automatic; you need a unifying result schema for cross-benchmark comparison. [13][16][17]  
+5. Service reproducibility (exact model backend/image/profile/version pinning) must be enforced by your runner metadata; defaults are not enough for strict reproducibility. [2][9][20]
+
+## Sources
+
+[1] https://github.com/av/harbor  
+[2] https://github.com/av/harbor/wiki/1.-Harbor-User-Guide  
+[3] https://github.com/av/harbor/tree/main/harbor-bench  
+[4] https://github.com/av/harbor/blob/main/harbor-bench/templates/inspect-eval-template.yaml  
+[5] https://github.com/av/harbor/blob/main/harbor-bench/src/harbor_bench/core.py  
+[6] https://pypi.org/project/inspect-harbor/  
+[7] https://github.com/meridianlabs-ai/inspect_harbor  
+[8] https://meridianlabs-ai.github.io/inspect_harbor/reference/inspect_harbor/default_harness  
+[9] https://meridianlabs-ai.github.io/inspect_harbor/reference/inspect_harbor/HarborServiceManager  
+[10] https://meridianlabs-ai.github.io/inspect_harbor/reference/inspect_harbor/SDKServiceManager  
+[11] https://meridianlabs-ai.github.io/inspect_harbor/reference/inspect_harbor/HarborBenchmark  
+[12] https://meridianlabs-ai.github.io/inspect_harbor/reference/inspect_harbor/harbor_solver  
+[13] https://meridianlabs-ai.github.io/inspect_harbor/reference/inspect_harbor/harbor_scorer  
+[14] https://meridianlabs-ai.github.io/inspect_harbor/reference/inspect_harbor/task  
+[15] https://meridianlabs-ai.github.io/inspect_harbor/registry/tasks/  
+[16] https://meridianlabs-ai.github.io/inspect_harbor/registry/tasks/spider2/  
+[17] https://meridianlabs-ai.github.io/inspect_harbor/registry/tasks/longmemeval/  
+[18] https://harborframework.com/docs/core-concepts  
+[19] https://harborframework.com/docs/running-jobs  
+[20] https://harborframework.com/docs/running-jobs/job-configuration  
+[21] https://harborframework.com/docs/running-jobs/trial-configuration  
+[22] https://harborframework.com/docs/solvers/custom-solvers  
+[23] https://harborframework.com/docs/solvers/registering-solvers  
+[24] https://harborframework.com/docs/benchmarks/benchmarking-tasks  
+[25] https://harborframework.com/docs/benchmarks/registering-benchmarks  
+[26] https://harborframework.com/docs/adapters/  
+[27] https://harborframework.com/docs/agents/base-agents  
+[28] https://harborframework.com/docs/agents/registering-agents  
+[29] https://harborframework.com/docs/agents/custom-agent-example  
+[30] https://harborframework.com/reference/core_api/
+tokens used
+137,571

@@ -1,0 +1,89 @@
+
+> build · claude-opus-4-6
+
+→ Read research/20260301-200517-a4a45a/phase1/20260301-200517-a4a45a/prompt.md
+
+# Todos
+[ ] Research Harbor's architecture (GitHub repo, docs, README)
+[ ] Research inspect-harbor bridge between Inspect AI and Harbor
+[ ] Research how to define/register new agent solvers in Harbor
+[ ] Research how to define/register new benchmarks/datasets (Spider2, LongMemEval)
+[ ] Research eval execution pipeline and lifecycle management
+[ ] Research practical architecture for general-purpose eval runner
+[ ] Find existing examples and patterns from Harbor's built-in eval support
+[ ] Identify gaps, limitations, and custom engineering needs
+[ ] Write comprehensive research report with sources
+
+# Todos
+[ ] Research Harbor's architecture (GitHub repo, docs, README)
+[ ] Research inspect-harbor bridge between Inspect AI and Harbor
+[ ] Research how to define/register new agent solvers in Harbor
+[ ] Research how to define/register new benchmarks/datasets (Spider2, LongMemEval)
+[ ] Research eval execution pipeline and lifecycle management
+[ ] Research practical architecture for general-purpose eval runner
+[ ] Find existing examples and patterns from Harbor's built-in eval support
+[ ] Identify gaps, limitations, and custom engineering needs
+[ ] Write comprehensive research report with sources
+
+% WebFetch https://github.com/av/harbor
+⚙ deepwiki_read_wiki_structure {"repoName":"av/harbor"}
+✗ webfetch failed
+Error: Request failed with status code: 404
+• Research Harbor eval & bench General Agent
+• Research inspect-harbor package General Agent
+• Research Spider2 & LongMemEval General Agent
+⚙ deepwiki_ask_question {"repoName":"av/harbor","question":"How does Harbor Bench work? How are benchmarks defined and run? How does Harbor integrate with evaluation frameworks like Inspect AI, lm-evaluation-harness, or Promptfoo? What is the architecture of the eval/benchmark system? How are custom solvers and benchmarks registered?"}
+⚙ deepwiki_ask_question {"repoName":"av/harbor","question":"How does Harbor's service orchestration work internally? How are Docker Compose files assembled, how are services connected, and how does the configuration system (harbor config) work? What is the architecture of the routines and tools directories?"}
+✓ Research inspect-harbor package General Agent
+✓ Research Spider2 & LongMemEval General Agent
+✓ Research Harbor eval & bench General Agent
+
+# Todos
+[x] Research Harbor's architecture (GitHub repo, docs, README)
+[ ] Research inspect-harbor bridge between Inspect AI and Harbor
+[ ] Research how to define/register new agent solvers in Harbor
+[ ] Research how to define/register new benchmarks/datasets (Spider2, LongMemEval)
+[ ] Research eval execution pipeline and lifecycle management
+[ ] Research practical architecture for general-purpose eval runner
+[ ] Find existing examples and patterns from Harbor's built-in eval support
+[ ] Identify gaps, limitations, and custom engineering needs
+[ ] Write comprehensive research report with sources
+
+• Deep research Laude Harbor General Agent
+• Deep research inspect-harbor pkg General Agent
+⚙ deepwiki_ask_question {"repoName":"meridianlabs-ai/inspect_harbor","question":"How does inspect-harbor bridge Harbor's evaluation framework with Inspect AI? What is the complete mapping between Harbor concepts (tasks, environments, tests, solutions) and Inspect AI concepts (Tasks, Samples, Solvers, Scorers, Sandboxes)? How do you use custom Inspect AI solvers with Harbor benchmarks? What is the harbor_scorer and oracle solver? What benchmarks are included?"}
+⚙ deepwiki_ask_question {"repoName":"laude-institute/harbor","question":"How does Harbor work as an agent evaluation framework? What is the complete architecture including: task definition format, agent registration and execution, Docker environment management, scoring/testing system, cloud execution (Modal, Daytona), the registry system, and the CLI interface? How do you create custom agents and custom benchmarks?"}
+✓ Deep research inspect-harbor pkg General Agent
+✓ Deep research Laude Harbor General Agent
+
+# Todos
+[x] Research Harbor's architecture (GitHub repo, docs, README)
+[x] Research inspect-harbor bridge between Inspect AI and Harbor
+[x] Research how to define/register new agent solvers in Harbor
+[x] Research how to define/register new benchmarks/datasets (Spider2, LongMemEval)
+[x] Research eval execution pipeline and lifecycle management
+[x] Research practical architecture for general-purpose eval runner
+[x] Find existing examples and patterns from Harbor's built-in eval support
+[x] Identify gaps, limitations, and custom engineering needs
+[ ] Write comprehensive research report with sources
+
+→ Read research/20260301-200517-a4a45a/phase1/20260301-200517-a4a45a
+→ Read research/20260301-200517-a4a45a/phase1
+→ Read research/20260301-200517-a4a45a
+→ Read research/20260301-200517-a4a45a/manifest.json
+→ Read research/20260301-200517-a4a45a/research-prompt.md
+
+← Write research/20260301-200517-a4a45a/phase1/opencode-wibey-opus-4-6-report.md
+Wrote file successfully.
+
+# Todos
+[x] Research Harbor's architecture (GitHub repo, docs, README)
+[x] Research inspect-harbor bridge between Inspect AI and Harbor
+[x] Research how to define/register new agent solvers in Harbor
+[x] Research how to define/register new benchmarks/datasets (Spider2, LongMemEval)
+[x] Research eval execution pipeline and lifecycle management
+[x] Research practical architecture for general-purpose eval runner
+[x] Find existing examples and patterns from Harbor's built-in eval support
+[x] Identify gaps, limitations, and custom engineering needs
+[x] Write comprehensive research report with sources
+

@@ -1,0 +1,27 @@
+{
+  "timestamp": "2026-03-01T20:15:07.666Z",
+  "slug": "20260301-200517-a4a45a",
+  "prompt": "file:research-prompt.md",
+  "promptSource": "file",
+  "readOnlyPolicy": "bestEffort",
+  "tools": [
+    {
+      "toolId": "opencode-wibey-opus-4-6",
+      "status": "success",
+      "exitCode": 0,
+      "durationMs": 590011,
+      "wordCount": 413,
+      "outputFile": "research/20260301-200517-a4a45a/phase1/20260301-200517-a4a45a/opencode-wibey-opus-4-6.md",
+      "stderrFile": "research/20260301-200517-a4a45a/phase1/20260301-200517-a4a45a/opencode-wibey-opus-4-6.stderr"
+    },
+    {
+      "toolId": "codex-5.3-xhigh",
+      "status": "success",
+      "exitCode": 0,
+      "durationMs": 389451,
+      "wordCount": 997,
+      "outputFile": "research/20260301-200517-a4a45a/phase1/20260301-200517-a4a45a/codex-5.3-xhigh.md",
+      "stderrFile": "research/20260301-200517-a4a45a/phase1/20260301-200517-a4a45a/codex-5.3-xhigh.stderr"
+    }
+  ]
+}
