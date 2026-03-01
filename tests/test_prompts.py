@@ -90,3 +90,86 @@ class TestBuildSynthesisPrompt:
         """agent_count rendered as string in the output."""
         result = build_synthesis_prompt("topic", 5, "reports here")
         assert "5" in result
+
+
+class TestFormatList:
+    def test_empty_list(self):
+        from ivory_tower.prompts import _format_list
+        assert _format_list([]) == "- (none provided)"
+
+    def test_single_item(self):
+        from ivory_tower.prompts import _format_list
+        assert _format_list(["a"]) == "- a"
+
+    def test_multiple_items(self):
+        from ivory_tower.prompts import _format_list
+        result = _format_list(["a", "b"])
+        assert result == "- a\n- b"
+
+
+class TestBuildJudgingPrompt:
+    def test_contains_topic_and_report(self):
+        from ivory_tower.prompts import build_judging_prompt
+        result = build_judging_prompt("AI safety", "This is a report about AI safety.")
+        assert "AI safety" in result
+        assert "This is a report about AI safety." in result
+        assert "Factual Accuracy" in result
+        assert "JSON" in result
+
+
+class TestBuildImprovementPrompt:
+    def test_contains_all_feedback_fields(self):
+        from ivory_tower.prompts import build_improvement_prompt
+        feedback = {
+            "score": 5.0,
+            "dimensions": {
+                "factual_accuracy": 6,
+                "depth_of_analysis": 5,
+                "source_quality": 4,
+                "coverage_breadth": 5,
+                "analytical_rigor": 5,
+            },
+            "strengths": ["good structure"],
+            "weaknesses": ["weak sources"],
+            "suggestions": ["add more references"],
+            "critique": "Needs more depth.",
+        }
+        result = build_improvement_prompt("AI safety", "current report", feedback, 3)
+        assert "Round 3" in result
+        assert "AI safety" in result
+        assert "current report" in result
+        assert "5.0/10" in result
+        assert "good structure" in result
+        assert "weak sources" in result
+        assert "add more references" in result
+        assert "Needs more depth." in result
+
+    def test_empty_feedback_defaults(self):
+        from ivory_tower.prompts import build_improvement_prompt
+        result = build_improvement_prompt("topic", "report", {}, 1)
+        assert "(none provided)" in result
+        assert "(no critique provided)" in result
+
+
+class TestBuildAdversarialSynthesisPrompt:
+    def test_contains_all_parts(self):
+        from ivory_tower.prompts import build_adversarial_synthesis_prompt
+        result = build_adversarial_synthesis_prompt(
+            topic="AI safety",
+            agent_a="claude",
+            optimized_report_a="Report A content",
+            score_a=7.5,
+            agent_b="codex",
+            optimized_report_b="Report B content",
+            score_b=8.0,
+            total_rounds=10,
+        )
+        assert "AI safety" in result
+        assert "claude" in result
+        assert "codex" in result
+        assert "Report A content" in result
+        assert "Report B content" in result
+        assert "7.5" in result
+        assert "8.0" in result
+        assert "10" in result
+        assert "Executive Summary" in result

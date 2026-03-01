@@ -16,15 +16,14 @@ from ivory_tower.counselors import (
     validate_agents,
 )
 from ivory_tower.engine import (
+    ConfigError,
     RunConfig,
     print_dry_run,
     resume_pipeline,
     run_pipeline,
-    run_phase1,
-    run_phase2,
-    run_phase3,
 )
 from ivory_tower.models import Manifest, PhaseStatus
+from ivory_tower.strategies import get_strategy, list_strategies as _list_strategies
 
 app = typer.Typer(name="ivory", help="Multi-agent deep research orchestrator.")
 
@@ -47,6 +46,10 @@ def research(
         Optional[str],
         typer.Option("--synthesizer", "-s", help="Agent ID for synthesis"),
     ] = None,
+    strategy: Annotated[
+        str,
+        typer.Option("--strategy", help="Research strategy (council, adversarial)"),
+    ] = "council",
     file: Annotated[
         Optional[Path],
         typer.Option("--file", "-f", help="Read topic from file"),
@@ -69,8 +72,30 @@ def research(
     json_output: Annotated[
         bool, typer.Option("--json", help="Output manifest JSON on completion")
     ] = False,
+    max_rounds: Annotated[
+        int,
+        typer.Option("--max-rounds", help="Max optimization rounds (adversarial only)"),
+    ] = 10,
 ) -> None:
     """Run a multi-agent deep research pipeline on a topic."""
+    # -- validate strategy --
+    try:
+        get_strategy(strategy)
+    except ValueError:
+        available = ", ".join(name for name, _ in _list_strategies())
+        typer.echo(
+            f"Unknown strategy '{strategy}'. Available: {available}",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    # -- warn if --max-rounds used with council --
+    if max_rounds != 10 and strategy == "council":
+        typer.echo(
+            "Warning: --max-rounds is only used by the adversarial strategy.",
+            err=True,
+        )
+
     # -- required options --
     if agents is None:
         typer.echo("Error: --agents / -a is required.", err=True)
@@ -114,13 +139,19 @@ def research(
         verbose=verbose,
         output_dir=output_dir,
         dry_run=dry_run,
+        strategy=strategy,
+        max_rounds=max_rounds,
     )
 
     if dry_run:
         print_dry_run(config)
         raise typer.Exit(code=0)
 
-    run_dir = run_pipeline(config)
+    try:
+        run_dir = run_pipeline(config)
+    except ConfigError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1)
 
     if json_output:
         manifest = Manifest.load(run_dir / "manifest.json")
@@ -163,42 +194,7 @@ def resume(
         typer.echo(f"Error: no manifest.json found in {run_dir}", err=True)
         raise typer.Exit(code=1)
 
-    manifest = Manifest.load(manifest_path)
-    topic_path = run_dir / "topic.md"
-    if not topic_path.exists():
-        typer.echo(f"Error: no topic.md found in {run_dir}", err=True)
-        raise typer.Exit(code=1)
-
-    topic = topic_path.read_text()
-
-    research_done = manifest.phases["research"].status == PhaseStatus.COMPLETE
-    cp_done = manifest.phases["cross_pollination"].status == PhaseStatus.COMPLETE
-    synthesis_done = manifest.phases["synthesis"].status == PhaseStatus.COMPLETE
-
-    if research_done and cp_done and synthesis_done:
-        typer.echo("All phases already complete.")
-        raise typer.Exit(code=0)
-
-    config = RunConfig(
-        topic=topic,
-        agents=manifest.agents,
-        synthesizer=manifest.synthesizer,
-        raw=manifest.flags.raw,
-        instructions=manifest.flags.instructions,
-        verbose=verbose,
-        output_dir=run_dir.parent,
-    )
-
-    if not research_done:
-        manifest = run_phase1(run_dir, config, manifest)
-
-    if not cp_done:
-        manifest = run_phase2(run_dir, config, manifest)
-
-    if not synthesis_done:
-        manifest = run_phase3(run_dir, config, manifest)
-
-    manifest.save(manifest_path)
+    resume_pipeline(run_dir, verbose=verbose)
     typer.echo(f"Resumed. Report: {run_dir / 'phase3' / 'final-report.md'}")
 
 
@@ -221,10 +217,19 @@ def status(
     topic_preview = manifest.topic[:80]
 
     typer.echo(f"Run ID:             {manifest.run_id}")
+    typer.echo(f"Strategy:           {manifest.strategy}")
     typer.echo(f"Topic:              {topic_preview}")
-    typer.echo(f"Research:           {manifest.phases['research'].status.value}")
-    typer.echo(f"Cross-pollination:  {manifest.phases['cross_pollination'].status.value}")
-    typer.echo(f"Synthesis:          {manifest.phases['synthesis'].status.value}")
+
+    # Delegate phase status display to the strategy
+    try:
+        strat = get_strategy(manifest.strategy)
+        phase_statuses = strat.format_status(manifest)
+        for label, value in phase_statuses:
+            typer.echo(f"{label + ':':<20} {value}")
+    except (ValueError, NotImplementedError):
+        # Fallback for unknown strategies
+        typer.echo(f"Research:           {manifest.phases.get('research', {})}")
+
     duration = manifest.total_duration_seconds
     typer.echo(f"Total duration:     {duration:.1f}s" if duration else "Total duration:     --")
 
@@ -246,32 +251,62 @@ def list_runs(
         typer.echo(f"No runs found (directory {output_dir} does not exist).")
         raise typer.Exit(code=0)
 
-    runs: list[tuple[str, str, str]] = []
+    runs: list[tuple[str, str, str, str]] = []
     for entry in sorted(output_dir.iterdir()):
         manifest_path = entry / "manifest.json"
         if entry.is_dir() and manifest_path.exists():
             try:
                 m = Manifest.load(manifest_path)
-                topic_short = m.topic[:60]
-                # Overall status: synthesis > cp > research
-                if m.phases["synthesis"].status == PhaseStatus.COMPLETE:
-                    overall = "complete"
-                elif m.phases["cross_pollination"].status == PhaseStatus.COMPLETE:
-                    overall = "synthesis pending"
-                elif m.phases["research"].status == PhaseStatus.COMPLETE:
-                    overall = "cross-pollination pending"
-                else:
-                    overall = m.phases["research"].status.value
-                runs.append((m.run_id, topic_short, overall))
+                topic_short = m.topic[:50]
+                strat_name = m.strategy
+
+                # Determine overall status from strategy
+                try:
+                    strat = get_strategy(strat_name)
+                    phase_statuses = strat.format_status(m)
+                    # Use the last phase's status as overall
+                    if phase_statuses:
+                        last_status = phase_statuses[-1][1]
+                        if last_status == "complete":
+                            overall = "complete"
+                        else:
+                            # Find the first non-complete phase
+                            for label, val in phase_statuses:
+                                if val != "complete":
+                                    overall = f"{label.lower()} {val}"
+                                    break
+                            else:
+                                overall = "complete"
+                    else:
+                        overall = "unknown"
+                except (ValueError, NotImplementedError):
+                    overall = "unknown"
+
+                runs.append((m.run_id, strat_name, topic_short, overall))
             except Exception:
-                runs.append((entry.name, "(error reading manifest)", "unknown"))
+                runs.append((entry.name, "?", "(error reading manifest)", "unknown"))
 
     if not runs:
         typer.echo("No runs found.")
         raise typer.Exit(code=0)
 
     # Simple table
-    typer.echo(f"{'Run ID':<30} {'Status':<26} {'Topic'}")
-    typer.echo("-" * 90)
-    for run_id, topic_short, overall in runs:
-        typer.echo(f"{run_id:<30} {overall:<26} {topic_short}")
+    typer.echo(f"{'Run ID':<30} {'Strategy':<14} {'Status':<22} {'Topic'}")
+    typer.echo("-" * 100)
+    for run_id, strat_name, topic_short, overall in runs:
+        typer.echo(f"{run_id:<30} {strat_name:<14} {overall:<22} {topic_short}")
+
+
+# ---------------------------------------------------------------------------
+# ivory strategies
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def strategies() -> None:
+    """List available research strategies."""
+    items = _list_strategies()
+    typer.echo(f"{'Strategy':<20} {'Description'}")
+    typer.echo("-" * 60)
+    for name, description in items:
+        typer.echo(f"{name:<20} {description}")

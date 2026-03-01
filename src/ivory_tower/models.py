@@ -14,6 +14,7 @@ class PhaseStatus(Enum):
     RUNNING = "running"
     COMPLETE = "complete"
     FAILED = "failed"
+    PARTIAL = "partial"
 
 
 @dataclass
@@ -59,10 +60,31 @@ class SynthesisPhase:
 
 
 @dataclass
+class SeedOptimizationResult:
+    status: PhaseStatus
+    judge: str
+    rounds_completed: int = 0
+    seed_score: float | None = None
+    final_score: float | None = None
+    output: str = ""
+    log: str = ""
+
+
+@dataclass
+class AdversarialOptimizationPhase:
+    status: PhaseStatus
+    started_at: str | None = None
+    completed_at: str | None = None
+    duration_seconds: float | None = None
+    seeds: dict[str, SeedOptimizationResult] = field(default_factory=dict)
+
+
+@dataclass
 class Flags:
     raw: bool = False
     instructions: str | None = None
     verbose: bool = False
+    max_rounds: int = 10
 
 
 @dataclass
@@ -72,14 +94,29 @@ class Manifest:
     agents: list[str]
     synthesizer: str
     flags: Flags
-    phases: dict[str, ResearchPhase | CrossPollinationPhase | SynthesisPhase]
+    phases: dict[str, Any]
+    strategy: str = "council"
     total_duration_seconds: float | None = None
 
     # -- serialization --
 
     def to_dict(self) -> dict[str, Any]:
+        # Delegate phase serialization to strategy if available
+        from ivory_tower.strategies import get_strategy
+        try:
+            strat = get_strategy(self.strategy)
+            phases_dict = strat.phases_to_dict(self.phases)
+        except (ValueError, NotImplementedError):
+            # Fallback for council phases (backward compat)
+            phases_dict = {
+                "research": self._research_to_dict(),
+                "cross_pollination": self._cross_pollination_to_dict(),
+                "synthesis": self._synthesis_to_dict(),
+            }
+
         return {
             "run_id": self.run_id,
+            "strategy": self.strategy,
             "topic": self.topic,
             "agents": self.agents,
             "synthesizer": self.synthesizer,
@@ -87,12 +124,9 @@ class Manifest:
                 "raw": self.flags.raw,
                 "instructions": self.flags.instructions,
                 "verbose": self.flags.verbose,
+                "max_rounds": self.flags.max_rounds,
             },
-            "phases": {
-                "research": self._research_to_dict(),
-                "cross_pollination": self._cross_pollination_to_dict(),
-                "synthesis": self._synthesis_to_dict(),
-            },
+            "phases": phases_dict,
             "total_duration_seconds": self.total_duration_seconds,
         }
 
@@ -151,11 +185,35 @@ class Manifest:
             raw=flags_d["raw"],
             instructions=flags_d["instructions"],
             verbose=flags_d["verbose"],
+            max_rounds=flags_d.get("max_rounds", 10),
         )
 
+        strategy = data.get("strategy", "council")
         phases_d = data["phases"]
 
-        # Research
+        # Delegate phase deserialization to strategy
+        from ivory_tower.strategies import get_strategy
+        try:
+            strat = get_strategy(strategy)
+            phases = strat.phases_from_dict(phases_d)
+        except (ValueError, NotImplementedError):
+            # Fallback for council phases (backward compat)
+            phases = cls._council_phases_from_dict(phases_d)
+
+        return cls(
+            run_id=data["run_id"],
+            topic=data["topic"],
+            agents=data["agents"],
+            synthesizer=data["synthesizer"],
+            flags=flags,
+            phases=phases,
+            strategy=strategy,
+            total_duration_seconds=data.get("total_duration_seconds"),
+        )
+
+    @staticmethod
+    def _council_phases_from_dict(phases_d: dict[str, Any]) -> dict[str, Any]:
+        """Fallback council phase deserialization."""
         rp_d = phases_d["research"]
         research = ResearchPhase(
             status=PhaseStatus(rp_d["status"]),
@@ -172,7 +230,6 @@ class Manifest:
             },
         )
 
-        # Cross-pollination
         cp_d = phases_d["cross_pollination"]
         cross_pollination = CrossPollinationPhase(
             status=PhaseStatus(cp_d["status"]),
@@ -189,7 +246,6 @@ class Manifest:
             },
         )
 
-        # Synthesis
         sp_d = phases_d["synthesis"]
         synthesis = SynthesisPhase(
             status=PhaseStatus(sp_d["status"]),
@@ -200,19 +256,11 @@ class Manifest:
             duration_seconds=sp_d.get("duration_seconds"),
         )
 
-        return cls(
-            run_id=data["run_id"],
-            topic=data["topic"],
-            agents=data["agents"],
-            synthesizer=data["synthesizer"],
-            flags=flags,
-            phases={
-                "research": research,
-                "cross_pollination": cross_pollination,
-                "synthesis": synthesis,
-            },
-            total_duration_seconds=data.get("total_duration_seconds"),
-        )
+        return {
+            "research": research,
+            "cross_pollination": cross_pollination,
+            "synthesis": synthesis,
+        }
 
     def save(self, path: Path) -> None:
         path.write_text(json.dumps(self.to_dict(), indent=2) + "\n")

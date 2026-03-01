@@ -89,6 +89,178 @@ Synthesize everything into a comprehensive final report with this structure:
 Be thorough. This is the final deliverable."""
 
 
+_JUDGING_TEMPLATE = """\
+# Research Report Evaluation
+
+You are an expert research evaluator. Score the following research report
+on a 1-10 scale across five dimensions. Be rigorous and critical.
+
+## Research Topic
+{topic}
+
+## Report to Evaluate
+{candidate_report}
+
+## Scoring Rubric
+
+Rate each dimension from 1 (poor) to 10 (excellent):
+
+1. **Factual Accuracy** -- Are claims well-sourced and verifiable? Any errors or unsupported assertions?
+2. **Depth of Analysis** -- Does the report go beyond surface-level description into genuine insight?
+3. **Source Quality** -- Are sources authoritative, current, and primary? Or mostly secondary/outdated?
+4. **Coverage Breadth** -- Does the report cover all important aspects of the topic? Any major gaps?
+5. **Analytical Rigor** -- Is reasoning sound? Are conclusions supported by evidence? Are counterarguments considered?
+
+## Output Format (JSON)
+
+Respond with ONLY a JSON object (no markdown fencing, no extra text):
+
+{{"overall_score": <float 1-10, weighted average>, "dimensions": {{"factual_accuracy": <int 1-10>, "depth_of_analysis": <int 1-10>, "source_quality": <int 1-10>, "coverage_breadth": <int 1-10>, "analytical_rigor": <int 1-10>}}, "strengths": ["<strength 1>", "<strength 2>"], "weaknesses": ["<weakness 1>", "<weakness 2>"], "suggestions": ["<specific improvement 1>", "<specific improvement 2>"], "critique": "<2-3 paragraph detailed critique explaining the scores>"}}
+
+Be specific in your critique. Vague feedback like "could be better" is useless.
+Point to specific claims, sections, or gaps. Your feedback will be used to
+iteratively improve this report."""
+
+_IMPROVEMENT_TEMPLATE = """\
+# Research Report Improvement -- Round {round_num}
+
+You previously wrote a research report. An independent AI agent has evaluated it
+and provided detailed feedback. Your job is to produce a STRICTLY BETTER version.
+
+## Research Topic
+{topic}
+
+## Your Current Report
+{current_report}
+
+## Judge's Feedback
+
+### Overall Score: {score}/10
+
+### Dimension Scores
+- Factual Accuracy: {factual_accuracy}/10
+- Depth of Analysis: {depth_of_analysis}/10
+- Source Quality: {source_quality}/10
+- Coverage Breadth: {coverage_breadth}/10
+- Analytical Rigor: {analytical_rigor}/10
+
+### Strengths
+{strengths}
+
+### Weaknesses
+{weaknesses}
+
+### Specific Suggestions
+{suggestions}
+
+### Detailed Critique
+{critique}
+
+## Your Task
+
+Produce an improved version of your research report that:
+
+1. **Addresses every weakness** the judge identified
+2. **Preserves every strength** -- don't regress on what's already good
+3. **Follows every specific suggestion** where feasible
+4. **Conducts NEW web research** to fix flagged errors, fill coverage gaps, find stronger sources, deepen shallow analysis
+5. **Does not pad or bloat** -- higher information density, not more words
+
+Write the complete improved report as a standalone document. Do not reference
+the judge or this improvement process in the output."""
+
+_ADVERSARIAL_SYNTHESIS_TEMPLATE = """\
+# Research Synthesis (Adversarial)
+
+2 AI agents independently researched a topic, then each report was iteratively
+optimized through {total_rounds} rounds of adversarial evaluation by the opposing
+agent. You have both optimized reports below.
+
+## Topic
+{topic_content}
+
+## Optimized Report A ({agent_a}, scored {score_a}/10 by {agent_b})
+{optimized_report_a}
+
+## Optimized Report B ({agent_b}, scored {score_b}/10 by {agent_a})
+{optimized_report_b}
+
+## Your Task
+
+Synthesize both optimized reports into a comprehensive final report:
+
+1. **Executive Summary** -- most important findings across both investigations
+2. **Key Findings** -- organized by THEME, combining strongest evidence from both
+3. **Areas of Consensus** -- where both agents converged after optimization
+4. **Areas of Disagreement** -- where agents still differ, with analysis of which view is better supported
+5. **Novel Insights** -- unique findings from the adversarial optimization process
+6. **Open Questions** -- what remains uncertain even after iterative refinement
+7. **Sources** -- comprehensive, deduplicated list of all URLs and references
+8. **Methodology** -- brief description of the adversarial optimization process
+
+Be thorough. This is the final deliverable."""
+
+
+def _format_list(items: list[str]) -> str:
+    """Format a list of strings as markdown bullet points."""
+    if not items:
+        return "- (none provided)"
+    return "\n".join(f"- {item}" for item in items)
+
+
+def build_judging_prompt(topic: str, candidate_report: str) -> str:
+    """Build the adversarial judging prompt."""
+    return _JUDGING_TEMPLATE.format(topic=topic, candidate_report=candidate_report)
+
+
+def build_improvement_prompt(
+    topic: str,
+    current_report: str,
+    judge_feedback: dict,
+    round_num: int,
+) -> str:
+    """Build the adversarial improvement prompt."""
+    dims = judge_feedback.get("dimensions", {})
+    return _IMPROVEMENT_TEMPLATE.format(
+        round_num=round_num,
+        topic=topic,
+        current_report=current_report,
+        score=judge_feedback.get("score", 0),
+        factual_accuracy=dims.get("factual_accuracy", 0),
+        depth_of_analysis=dims.get("depth_of_analysis", 0),
+        source_quality=dims.get("source_quality", 0),
+        coverage_breadth=dims.get("coverage_breadth", 0),
+        analytical_rigor=dims.get("analytical_rigor", 0),
+        strengths=_format_list(judge_feedback.get("strengths", [])),
+        weaknesses=_format_list(judge_feedback.get("weaknesses", [])),
+        suggestions=_format_list(judge_feedback.get("suggestions", [])),
+        critique=judge_feedback.get("critique", "(no critique provided)"),
+    )
+
+
+def build_adversarial_synthesis_prompt(
+    topic: str,
+    agent_a: str,
+    optimized_report_a: str,
+    score_a: float,
+    agent_b: str,
+    optimized_report_b: str,
+    score_b: float,
+    total_rounds: int,
+) -> str:
+    """Build the adversarial synthesis prompt."""
+    return _ADVERSARIAL_SYNTHESIS_TEMPLATE.format(
+        total_rounds=total_rounds,
+        topic_content=topic,
+        agent_a=agent_a,
+        optimized_report_a=optimized_report_a,
+        score_a=score_a,
+        agent_b=agent_b,
+        optimized_report_b=optimized_report_b,
+        score_b=score_b,
+    )
+
+
 def build_research_prompt(
     topic: str,
     instructions: str | None = None,

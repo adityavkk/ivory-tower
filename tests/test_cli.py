@@ -170,13 +170,9 @@ class TestResume:
         assert result.exit_code != 0
         assert "manifest" in result.output.lower()
 
-    @patch("ivory_tower.cli.run_phase1")
-    @patch("ivory_tower.cli.run_phase2")
-    @patch("ivory_tower.cli.run_phase3")
-    def test_resume_skips_completed_phases(
-        self, mock_phase3, mock_phase2, mock_phase1, tmp_path
-    ):
-        """With phase1 complete, phase1 should NOT re-run."""
+    @patch("ivory_tower.cli.resume_pipeline")
+    def test_resume_skips_completed_phases(self, mock_resume, tmp_path):
+        """Resume delegates to resume_pipeline."""
         manifest = _make_manifest(
             research_status=PhaseStatus.COMPLETE,
             cp_status=PhaseStatus.PENDING,
@@ -185,15 +181,11 @@ class TestResume:
         manifest.save(tmp_path / "manifest.json")
         (tmp_path / "topic.md").write_text(TOPIC)
 
-        # Mock phase returns
-        mock_phase2.return_value = manifest
-        mock_phase3.return_value = manifest
+        mock_resume.return_value = tmp_path
 
         result = runner.invoke(app, ["resume", str(tmp_path)])
         assert result.exit_code == 0
-        mock_phase1.assert_not_called()
-        mock_phase2.assert_called_once()
-        mock_phase3.assert_called_once()
+        mock_resume.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

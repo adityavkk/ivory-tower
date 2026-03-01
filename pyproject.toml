@@ -8,6 +8,9 @@ dependencies = [
     "rich>=13",
 ]
 
+[project.optional-dependencies]
+adversarial = ["gepa>=0.1.0"]
+
 [project.scripts]
 ivory = "ivory_tower.cli:app"
 
@@ -26,4 +29,5 @@ pythonpath = ["src"]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
+    "gepa>=0.1.0",
 ]
