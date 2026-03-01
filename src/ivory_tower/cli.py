@@ -25,6 +25,7 @@ from ivory_tower.engine import (
     run_phase3,
 )
 from ivory_tower.models import Manifest, PhaseStatus
+from ivory_tower.strategies import list_strategies as _list_strategies
 
 app = typer.Typer(name="ivory", help="Multi-agent deep research orchestrator.")
 
@@ -275,3 +276,18 @@ def list_runs(
     typer.echo("-" * 90)
     for run_id, topic_short, overall in runs:
         typer.echo(f"{run_id:<30} {overall:<26} {topic_short}")
+
+
+# ---------------------------------------------------------------------------
+# ivory strategies
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def strategies() -> None:
+    """List available research strategies."""
+    items = _list_strategies()
+    typer.echo(f"{'Strategy':<20} {'Description'}")
+    typer.echo("-" * 60)
+    for name, description in items:
+        typer.echo(f"{name:<20} {description}")
