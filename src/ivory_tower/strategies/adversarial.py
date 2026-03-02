@@ -1322,7 +1322,10 @@ class AdversarialStrategy:
                     fmt_score(seed_score),
                     fmt_score(final_score),
                 )
-                self._save_optimization_log(run_dir, agent, result)
+                self._save_optimization_log(
+                    run_dir, agent, result,
+                    dimension_history=seed_result.dimension_history,
+                )
                 logger.info("Optimization complete for %s: best_score=%s, rounds=%s",
                             agent, best_score, getattr(result, "total_metric_calls", "?"))
 
@@ -1463,11 +1466,21 @@ class AdversarialStrategy:
         manifest.save(run_dir / "manifest.json")
         return manifest
 
-    def _save_optimization_log(self, run_dir: Path, agent: str, result: Any) -> None:
+    def _save_optimization_log(
+        self,
+        run_dir: Path,
+        agent: str,
+        result: Any,
+        *,
+        dimension_history: list[dict] | None = None,
+    ) -> None:
         """Save optimization log JSON for one agent.
 
         Works with real GEPAResult (val_aggregate_scores, candidates, best_idx)
         and with mock results that may use different attribute names.
+
+        When *dimension_history* is provided, it is included in the log so
+        downstream consumers can see per-dimension score evolution.
         """
         phase2_dir = run_dir / "phase2"
 
@@ -1492,6 +1505,7 @@ class AdversarialStrategy:
             "score_history": score_history,
             "best_round": best_idx + 1,
             "improvement": f"+{final_score - seed_score:.1f} ({seed_score:.1f} -> {final_score:.1f})",
+            "dimension_history": dimension_history or [],
         }
 
         log_file = phase2_dir / f"{agent}-optimization-log.json"

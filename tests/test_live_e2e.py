@@ -225,6 +225,210 @@ class TestAdversarialLiveE2E:
             for term in ("websocket", "sse", "server-sent", "real-time", "realtime")
         ), "Final report doesn't appear to be on topic"
 
+    # -- GEPA prompt feature verification ------------------------------------
+
+    def test_manifest_has_dimension_history(self, run_dir: Path):
+        """dimension_history should be persisted in the manifest for each seed."""
+        m = Manifest.load(run_dir / "manifest.json")
+        opt_phase = m.phases["adversarial_optimization"]
+        for agent in (AGENT_A, AGENT_B):
+            seed = opt_phase.seeds[agent]
+            assert hasattr(seed, "dimension_history"), (
+                f"{agent} SeedOptimizationResult missing dimension_history"
+            )
+            assert isinstance(seed.dimension_history, list), (
+                f"{agent} dimension_history is not a list"
+            )
+            # With max_rounds=2, GEPA makes 3 evaluator calls (1 seed + 2 rounds)
+            assert len(seed.dimension_history) >= 1, (
+                f"{agent} dimension_history is empty -- evaluator didn't record rounds"
+            )
+
+    def test_dimension_history_has_per_dimension_scores(self, run_dir: Path):
+        """Each dimension_history entry should have round, score, and dimensions."""
+        m = Manifest.load(run_dir / "manifest.json")
+        opt_phase = m.phases["adversarial_optimization"]
+        for agent in (AGENT_A, AGENT_B):
+            seed = opt_phase.seeds[agent]
+            for entry in seed.dimension_history:
+                assert "round" in entry, f"{agent} dim history missing 'round'"
+                assert "score" in entry, f"{agent} dim history missing 'score'"
+                assert "dimensions" in entry, f"{agent} dim history missing 'dimensions'"
+                assert isinstance(entry["score"], (int, float)), (
+                    f"{agent} dim history score is not numeric"
+                )
+                # If score > 0, dimensions should be populated
+                if entry["score"] > 0:
+                    dims = entry["dimensions"]
+                    assert isinstance(dims, dict), f"{agent} dimensions is not a dict"
+                    assert len(dims) > 0, (
+                        f"{agent} scored {entry['score']} but dimensions dict is empty"
+                    )
+
+    def test_dimension_history_shows_score_movement(self, run_dir: Path):
+        """With max_rounds=2 and non-zero scores, we should see multiple rounds."""
+        m = Manifest.load(run_dir / "manifest.json")
+        opt_phase = m.phases["adversarial_optimization"]
+        any_multi_round = False
+        for agent in (AGENT_A, AGENT_B):
+            seed = opt_phase.seeds[agent]
+            if len(seed.dimension_history) > 1:
+                any_multi_round = True
+                rounds = [e["round"] for e in seed.dimension_history]
+                assert rounds == sorted(rounds), (
+                    f"{agent} dimension_history rounds are not in order: {rounds}"
+                )
+        # At least one agent should have multiple rounds of scoring
+        assert any_multi_round, (
+            "Neither agent had more than 1 round of dimension scoring -- "
+            "GEPA optimization may not be running improvement rounds"
+        )
+
+    def test_improvement_prompts_exist(self, run_dir: Path):
+        """Improvement prompt files should be written for each improvement round."""
+        phase2 = run_dir / "phase2"
+        for agent in (AGENT_A, AGENT_B):
+            improve_dirs = sorted(phase2.glob(f"{agent}-improve-round-*"))
+            # With max_rounds=2 we expect at least 1 improvement round
+            # (GEPA uses 1 call for seed eval, leaving up to 2 for improvement)
+            if not improve_dirs:
+                # If no improvement dirs, check if this agent had non-zero seed score
+                # (agents with 0.0 seed may not get improvement rounds)
+                continue
+            for d in improve_dirs:
+                prompt_file = d / "improve-prompt.md"
+                assert prompt_file.exists(), (
+                    f"Missing improvement prompt in {d.name}"
+                )
+                prompt_text = prompt_file.read_text()
+                assert len(prompt_text) > 100, (
+                    f"Improvement prompt in {d.name} too short"
+                )
+
+    def test_improvement_prompt_round2_has_trajectory(self, run_dir: Path):
+        """Round 2+ improvement prompts should contain a Score Trajectory section."""
+        phase2 = run_dir / "phase2"
+        found_trajectory = False
+        for agent in (AGENT_A, AGENT_B):
+            # Look for round 2+ improvement dirs (round 1 has no trajectory)
+            round2_dirs = sorted(phase2.glob(f"{agent}-improve-round-0[2-9]"))
+            for d in round2_dirs:
+                prompt_file = d / "improve-prompt.md"
+                if prompt_file.exists():
+                    prompt_text = prompt_file.read_text()
+                    if "Score Trajectory" in prompt_text:
+                        found_trajectory = True
+                        # Trajectory should contain "Round" references
+                        assert "Round" in prompt_text, (
+                            f"Score Trajectory in {d.name} has no Round entries"
+                        )
+        if not found_trajectory:
+            # Check if any agent even had a round 2
+            any_round2 = any(
+                list(phase2.glob(f"{a}-improve-round-0[2-9]"))
+                for a in (AGENT_A, AGENT_B)
+            )
+            if any_round2:
+                pytest.fail(
+                    "Round 2+ improvement prompts exist but none contain "
+                    "a 'Score Trajectory' section"
+                )
+            else:
+                pytest.skip("No round 2 improvement dirs found (may need --max-rounds 3)")
+
+    def test_improvement_prompt_has_dimension_focus(self, run_dir: Path):
+        """Improvement prompts should highlight the weakest dimension."""
+        phase2 = run_dir / "phase2"
+        found_focus = False
+        for agent in (AGENT_A, AGENT_B):
+            improve_dirs = sorted(phase2.glob(f"{agent}-improve-round-*"))
+            for d in improve_dirs:
+                prompt_file = d / "improve-prompt.md"
+                if prompt_file.exists():
+                    prompt_text = prompt_file.read_text()
+                    if "Priority Focus" in prompt_text:
+                        found_focus = True
+                        assert "weakest dimension" in prompt_text.lower(), (
+                            f"Priority Focus section in {d.name} doesn't mention weakest dimension"
+                        )
+        if not found_focus:
+            # This is acceptable only if all scores were 0 (no dimensions parsed)
+            m = Manifest.load(run_dir / "manifest.json")
+            opt_phase = m.phases["adversarial_optimization"]
+            all_zero = all(
+                (opt_phase.seeds[a].seed_score or 0) == 0
+                for a in (AGENT_A, AGENT_B)
+            )
+            if all_zero:
+                pytest.skip(
+                    "All seed scores were 0 -- no dimensions available for focus targeting"
+                )
+            else:
+                pytest.fail(
+                    "No improvement prompt contained a 'Priority Focus' section "
+                    "despite non-zero scores"
+                )
+
+    def test_round_debug_captures_dimension_data(self, run_dir: Path):
+        """round-debug.json files should capture evaluator dimension breakdown."""
+        phase2 = run_dir / "phase2"
+        found_debug = False
+        for agent in (AGENT_A, AGENT_B):
+            improve_dirs = sorted(phase2.glob(f"{agent}-improve-round-*"))
+            for d in improve_dirs:
+                debug_file = d / "round-debug.json"
+                if debug_file.exists():
+                    found_debug = True
+                    data = json.loads(debug_file.read_text())
+                    assert "feedback_score" in data, (
+                        f"round-debug.json in {d.name} missing feedback_score"
+                    )
+                    assert "feedback_dimensions" in data, (
+                        f"round-debug.json in {d.name} missing feedback_dimensions"
+                    )
+                    assert isinstance(data["feedback_dimensions"], dict)
+        if not found_debug:
+            # Acceptable only if no improvement rounds happened at all
+            any_improve = any(
+                list(phase2.glob(f"{a}-improve-round-*"))
+                for a in (AGENT_A, AGENT_B)
+            )
+            if any_improve:
+                pytest.fail("Improvement dirs exist but no round-debug.json files found")
+            else:
+                pytest.skip("No improvement rounds occurred")
+
+    def test_judging_round_dirs_contain_judge_prompt(self, run_dir: Path):
+        """Each judging round should have a judge-prompt.md file."""
+        phase2 = run_dir / "phase2"
+        judging_dirs = sorted(phase2.glob("judging/round-*"))
+        assert len(judging_dirs) >= 2, (
+            f"Expected at least 2 judging round dirs, found {len(judging_dirs)}"
+        )
+        for d in judging_dirs:
+            prompt = d / "judge-prompt.md"
+            assert prompt.exists(), f"Missing judge-prompt.md in {d.name}"
+            text = prompt.read_text()
+            assert len(text) > 100, f"Judge prompt in {d.name} too short"
+
+    def test_optimization_log_has_dimension_history(self, run_dir: Path):
+        """Optimization log should include per-round dimension breakdowns."""
+        for agent in (AGENT_A, AGENT_B):
+            path = run_dir / "phase2" / f"{agent}-optimization-log.json"
+            if not path.exists():
+                continue
+            log = json.loads(path.read_text())
+            assert "dimension_history" in log, (
+                f"{agent} optimization log missing dimension_history"
+            )
+            dim_hist = log["dimension_history"]
+            assert isinstance(dim_hist, list)
+            # Should have at least 1 entry (seed evaluation)
+            if log.get("seed_score", 0) > 0 or log.get("final_score", 0) > 0:
+                assert len(dim_hist) >= 1, (
+                    f"{agent} has non-zero scores but empty dimension_history in log"
+                )
+
 
 # ---------------------------------------------------------------------------
 # Live tests -- council
