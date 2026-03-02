@@ -1,6 +1,6 @@
 # AGENTS.md -- ivory-tower
 
-Multi-agent deep research orchestrator. Python CLI (`ivory`) coordinating AI coding agents via external `counselors` CLI. Orchestrator only -- never an agent runtime.
+Multi-agent deep research orchestrator. Python CLI (`ivory`) coordinating AI coding agents via external `counselors` CLI, with optional direct LLM execution via litellm. Orchestrator only -- never an agent runtime.
 
 ## What This Is
 
@@ -50,6 +50,7 @@ research/             # output from real runs (disposable)
 ```bash
 ivory research "topic" -a agent1,agent2 -s synthesizer     # council (default)
 ivory research "topic" --strategy adversarial -a a,b -s a   # adversarial
+ivory research "topic" --strategy adversarial --executor direct --model openai/claude-haiku-4-5 -a a,b -s a
 ivory research "topic" --template debate -a a,b -s a        # YAML template
 ivory resume <run-dir>                                       # resume partial
 ivory status <run-dir>                                       # show status
@@ -62,6 +63,7 @@ ivory strategies / templates / profiles / audit              # introspection
 ```bash
 uv tool install ivory-tower                         # standard install
 uv tool install "ivory-tower[adversarial]"          # with GEPA
+uv tool install "ivory-tower[direct]"               # with direct executor (litellm)
 uv run pytest tests/ -x -v                          # mocked tests (excludes @live)
 uv run pytest tests/ -m live -v -s                  # live e2e (calls real agents)
 uv run pytest tests/test_sandbox_integration.py     # sandbox integration
@@ -159,7 +161,7 @@ Agents working on this codebase should research these concepts before diving in:
 ## Rules
 
 **NEVER:**
-- Implement agent execution directly -- all dispatch through `counselors run` or `AgentExecutor`
+- Implement ad-hoc execution paths outside strategy/executor abstractions -- dispatch through `counselors` or the approved direct executor path
 - Skip tests; disable tests instead of fixing them
 - Commit code that doesn't pass `uv run pytest tests/ -x -v`
 - Use `--no-verify` on commits

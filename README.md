@@ -2,7 +2,7 @@
 
 Multi-agent deep research from the terminal.
 
-Orchestrates [counselors](https://github.com/anomalyco/counselors) agents to research a topic in parallel, challenge each other's work, and synthesize a final report.
+Orchestrates [counselors](https://github.com/anomalyco/counselors) agents (or direct LLM calls via litellm) to research a topic in parallel, challenge each other's work, and synthesize a final report.
 
 Five strategies. **Council** and **adversarial** are battle-tested. **Debate**, **map-reduce**, and **red-blue** are implemented via the YAML template engine but not yet live-tested.
 
@@ -75,6 +75,9 @@ uv tool install ivory-tower
 
 # with adversarial strategy support (GEPA)
 uv tool install "ivory-tower[adversarial]"
+
+# with direct executor support (litellm)
+uv tool install "ivory-tower[direct]"
 ```
 
 ### Quick start
@@ -90,6 +93,16 @@ ivory research "state of WebAssembly in 2026" \
   --strategy adversarial \
   -a claude-opus,codex-5.3-xhigh \
   -s claude-opus \
+  --max-rounds 5
+
+# adversarial direct executor -- labels for agent roles + one explicit model
+ivory research "state of WebAssembly in 2026" \
+  --strategy adversarial \
+  --executor direct \
+  --model openai/claude-haiku-4-5 \
+  --api-base http://127.0.0.1:8112/v1 \
+  -a direct-a,direct-b \
+  -s direct-synth \
   --max-rounds 5
 
 # read topic from file, pipe from stdin
@@ -137,6 +150,9 @@ ivory audit    RUN_DIR [AGENT]    Query sandbox audit trail
 | `--raw` | | Send topic as-is with no prompt wrapping |
 | `--output-dir` | `-o` | Override output directory (default: `./research`) |
 | `--max-rounds` | | Max GEPA optimization rounds (adversarial, default: 10) |
+| `--executor` | | Execution backend: `counselors` (default) or `direct` |
+| `--model` | | LLM model for direct executor (required with `--executor direct`) |
+| `--api-base` | | Optional API base URL for direct executor |
 | `--rounds` | | Number of rounds for iterative phases |
 | `--sandbox` | | Sandbox backend: `none`, `local`, `agentfs`, `daytona` |
 | `--red-team` | | Agent specs for red team (red-blue strategy) |
@@ -359,8 +375,9 @@ Rich markup tags used in log messages:
 
 - Python 3.12+
 - [uv](https://github.com/astral-sh/uv)
-- [counselors](https://github.com/anomalyco/counselors) installed and configured with at least 2 agents
+- [counselors](https://github.com/anomalyco/counselors) installed and configured with at least 2 agents (when using `--executor counselors`)
 - [gepa](https://github.com/anomalyco/gepa) for the adversarial strategy (`uv tool install "ivory-tower[adversarial]"`)
+- [litellm](https://github.com/BerriAI/litellm) for direct executor mode (`uv tool install "ivory-tower[direct]"`)
 
 ### Inspired by
 
