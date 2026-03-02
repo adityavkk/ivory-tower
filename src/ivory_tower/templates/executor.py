@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import string
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -32,6 +33,16 @@ from ivory_tower.templates.loader import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+
+def _safe_format(template: str, **kwargs: Any) -> str:
+    """Format a string template, substituting 'unknown' for missing keys."""
+    class _SafeDict(dict):
+        def __missing__(self, key: str) -> str:
+            logger.warning("Output template variable '{%s}' not provided, using 'unknown'", key)
+            return "unknown"
+    return template.format_map(_SafeDict(**kwargs))
 
 
 def setup_phase_isolation(
@@ -237,7 +248,14 @@ class GenericTemplateExecutor:
                     elif a == synthesizer and synthesizer in sandboxes:
                         phase_sandboxes[a] = sandboxes[synthesizer]
 
-                num_rounds = rounds_override or phase.rounds or self.template.defaults.rounds
+                # Only phases that explicitly declare rounds are iterative.
+                # defaults.rounds provides a fallback count for those phases.
+                # rounds_override can override that count but won't make a
+                # non-iterative phase iterative.
+                if phase.rounds is not None:
+                    num_rounds = rounds_override or phase.rounds or self.template.defaults.rounds
+                else:
+                    num_rounds = None
 
                 # -- Phase header --
                 phase_desc = phase.description or phase.name
@@ -359,7 +377,7 @@ class GenericTemplateExecutor:
                     )
                 for agent_name, future in futures.items():
                     result = future.result()
-                    output_filename = phase.output.format(agent=agent_name)
+                    output_filename = _safe_format(phase.output, agent=agent_name)
                     canonical = run_dir / phase.name / output_filename
                     canonical.parent.mkdir(parents=True, exist_ok=True)
                     sandboxes[agent_name].copy_out(result.report_path, canonical)
@@ -375,7 +393,7 @@ class GenericTemplateExecutor:
                         f"output/{phase.name}",
                         verbose=verbose,
                     )
-                output_filename = phase.output.format(agent=agent_name)
+                output_filename = _safe_format(phase.output, agent=agent_name)
                 canonical = run_dir / phase.name / output_filename
                 canonical.parent.mkdir(parents=True, exist_ok=True)
                 sandbox.copy_out(result.report_path, canonical)
@@ -443,8 +461,8 @@ class GenericTemplateExecutor:
                     )
 
                 # Copy output to canonical location
-                output_filename = phase.output.format(
-                    agent=agent_name, round=round_num,
+                output_filename = _safe_format(
+                    phase.output, agent=agent_name, round=round_num,
                 )
                 canonical = run_dir / phase.name / output_filename
                 canonical.parent.mkdir(parents=True, exist_ok=True)

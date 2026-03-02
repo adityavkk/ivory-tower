@@ -58,23 +58,55 @@ class CounselorsExecutor:
 
 
 def _find_report(sandbox: Sandbox, output_dir: str, agent_name: str) -> str | None:
-    """Find the report file in the sandbox output directory.
+    """Find the agent's report file in the sandbox output directory.
 
-    Counselors creates output in subdirectories named after the agent's slug.
-    This searches for .md files in the output directory.
+    Counselors creates output in a subdirectory (slug) like:
+        <output_dir>/<slug>/prompt.md
+        <output_dir>/<slug>/summary.md
+        <output_dir>/<slug>/run.json
+        <output_dir>/<slug>/<agent>.md        <- the actual output
+        <output_dir>/<slug>/<agent>.stderr
+
+    Strategy: prefer the file matching the agent name, then fall back to
+    the largest .md file excluding known counselors meta-files.
     """
+    # Known counselors meta-files that are NOT agent output
+    META_FILES = {"prompt.md", "summary.md", "run.json"}
+
     try:
         files = sandbox.list_files(output_dir)
     except (FileNotFoundError, OSError):
         return None
 
-    # Look for .md files
+    if not files:
+        return None
+
     md_files = [f for f in files if f.endswith(".md")]
+
+    # 1. Prefer the file matching the agent name exactly
+    agent_file = f"{agent_name}.md"
+    for f in md_files:
+        if Path(f).name == agent_file:
+            return f"{output_dir}/{f}"
+
+    # 2. Filter out known meta-files and .stderr files
+    candidate_md = [f for f in md_files if Path(f).name not in META_FILES]
+
+    # 3. If exactly one candidate, use it directly (no need to measure sizes)
+    if len(candidate_md) == 1:
+        return f"{output_dir}/{candidate_md[0]}"
+
+    # 4. Multiple candidates: pick the largest (likely the actual report)
+    if candidate_md:
+        best = max(
+            candidate_md,
+            key=lambda f: len(sandbox.read_file(f"{output_dir}/{f}")),
+        )
+        return f"{output_dir}/{best}"
+
+    # 5. Last resort: any .md file (even meta-files)
     if md_files:
         return f"{output_dir}/{md_files[0]}"
 
-    # Fallback: any file
-    if files:
-        return f"{output_dir}/{files[0]}"
-
-    return None
+    # 6. Any file at all
+    return f"{output_dir}/{files[0]}"
