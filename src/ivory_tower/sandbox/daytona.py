@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 from typing import Any
 
 from .types import ExecutionResult, SandboxConfig
+
+logger = logging.getLogger(__name__)
 
 
 class DaytonaSandbox:
@@ -90,8 +93,9 @@ class DaytonaSandbox:
     def destroy(self) -> None:
         try:
             self._sandbox.delete()
+            logger.debug("Sandbox destroyed [daytona]: agent=%s", self.agent_name)
         except Exception:
-            pass
+            logger.warning("Sandbox destroy failed [daytona]: agent=%s", self.agent_name, exc_info=True)
 
 
 class DaytonaSharedVolume:
@@ -172,6 +176,10 @@ class DaytonaSandboxProvider:
 
         sandbox_id = f"{run_id}-{agent_name}"
         self._sandboxes[sandbox_id] = sandbox
+        logger.debug(
+            "Sandbox created [daytona]: agent=%s container=%s network_blocked=%s",
+            agent_name, sandbox_id, not config.network.allow_outbound,
+        )
         return DaytonaSandbox(
             id=sandbox_id,
             agent_name=agent_name,
@@ -187,6 +195,7 @@ class DaytonaSandboxProvider:
         run_dir: Path,
     ) -> DaytonaSharedVolume:
         volume = self.client.volume.get(f"{run_id}-{name}", create=True)
+        logger.debug("Shared volume created [daytona]: name=%s id=%s", name, f"{run_id}-{name}")
         return DaytonaSharedVolume(
             id=f"{run_id}-{name}",
             path=Path(f"/shared/{name}"),
@@ -195,12 +204,14 @@ class DaytonaSandboxProvider:
         )
 
     def destroy_all(self, run_id: str) -> None:
+        count = sum(1 for k in self._sandboxes if k.startswith(run_id))
+        logger.debug("Sandbox cleanup [daytona]: run_id=%s containers=%d", run_id, count)
         for key, sandbox in list(self._sandboxes.items()):
             if key.startswith(run_id):
                 try:
                     sandbox.delete()
                 except Exception:
-                    pass
+                    logger.warning("Container delete failed [daytona]: %s", key, exc_info=True)
 
     @staticmethod
     def is_available() -> bool:

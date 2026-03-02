@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import subprocess
@@ -9,6 +10,8 @@ import time
 from pathlib import Path
 
 from .types import ExecutionResult, SandboxConfig
+
+logger = logging.getLogger(__name__)
 
 
 class NullSandbox:
@@ -128,11 +131,13 @@ class NullSandboxProvider:
     ) -> NullSandbox:
         # Null provider uses the run directory directly -- no subdirectories
         workspace = run_dir
-        return NullSandbox(
+        sandbox = NullSandbox(
             id=f"{run_id}-{agent_name}",
             agent_name=agent_name,
             workspace_dir=workspace,
         )
+        logger.debug("Sandbox created [none]: agent=%s workspace=%s", agent_name, workspace)
+        return sandbox
 
     def create_shared_volume(
         self,
@@ -142,10 +147,11 @@ class NullSandboxProvider:
     ) -> NullSharedVolume:
         vol_dir = run_dir / "volumes" / name
         vol_dir.mkdir(parents=True, exist_ok=True)
+        logger.debug("Shared volume created [none]: name=%s path=%s", name, vol_dir)
         return NullSharedVolume(id=f"{run_id}-{name}", path=vol_dir)
 
     def destroy_all(self, run_id: str) -> None:
-        pass
+        logger.debug("Sandbox cleanup [none]: run_id=%s (no-op)", run_id)
 
     @staticmethod
     def is_available() -> bool:

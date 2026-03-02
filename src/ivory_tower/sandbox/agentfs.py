@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import subprocess
@@ -9,6 +10,8 @@ import time
 from pathlib import Path
 
 from .types import ExecutionResult, SandboxConfig
+
+logger = logging.getLogger(__name__)
 
 
 class AgentFSSandbox:
@@ -110,7 +113,9 @@ class AgentFSSandbox:
         db_path = Path(f".agentfs/{self.id}.db")
         if db_path.exists():
             shutil.copy2(db_path, snapshot_path)
+            logger.debug("Snapshot created [agentfs]: agent=%s label=%s path=%s", self.agent_name, label, snapshot_path)
             return snapshot_path
+        logger.warning("Snapshot skipped [agentfs]: agent=%s db not found at %s", self.agent_name, db_path)
         return None
 
     def diff(self) -> str | None:
@@ -124,11 +129,13 @@ class AgentFSSandbox:
             diff_dir.mkdir(parents=True, exist_ok=True)
             diff_path = diff_dir / "diff.txt"
             diff_path.write_text(result.stdout)
+            logger.debug("Diff saved [agentfs]: agent=%s path=%s", self.agent_name, diff_path)
             return result.stdout
+        logger.debug("Diff unavailable [agentfs]: agent=%s exit_code=%d", self.agent_name, result.returncode)
         return None
 
     def destroy(self) -> None:
-        pass  # AgentFS databases persist for audit
+        logger.debug("Sandbox retained [agentfs]: agent=%s (db persists for audit)", self.agent_name)
 
 
 class AgentFSSharedVolume:
@@ -193,15 +200,18 @@ class AgentFSSandboxProvider:
             cmd.extend(["--key", config.encryption_key])
         if config.encryption_cipher:
             cmd.extend(["--cipher", config.encryption_cipher])
+        logger.debug("Initializing agentfs sandbox: %s", " ".join(cmd))
         subprocess.run(cmd, check=True)
 
-        return AgentFSSandbox(
+        sandbox = AgentFSSandbox(
             id=agent_id,
             agent_name=agent_name,
             workspace_dir=Path(f".agentfs/{agent_id}.db"),
             config=config,
             run_dir=run_dir,
         )
+        logger.debug("Sandbox created [agentfs]: agent=%s id=%s", agent_name, agent_id)
+        return sandbox
 
     def create_shared_volume(
         self,
@@ -211,13 +221,14 @@ class AgentFSSandboxProvider:
     ) -> AgentFSSharedVolume:
         vol_id = f"{run_id}-shared-{name}"
         subprocess.run(["agentfs", "init", vol_id], check=True)
+        logger.debug("Shared volume created [agentfs]: name=%s id=%s", name, vol_id)
         return AgentFSSharedVolume(
             id=vol_id,
             path=Path(f".agentfs/{vol_id}.db"),
         )
 
     def destroy_all(self, run_id: str) -> None:
-        pass  # AgentFS databases persist for inspection/audit
+        logger.debug("Sandbox cleanup [agentfs]: run_id=%s (dbs persist for audit)", run_id)
 
     @staticmethod
     def is_available() -> bool:

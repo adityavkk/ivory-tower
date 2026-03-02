@@ -9,13 +9,7 @@ from typing import Any
 
 from rich.console import Console
 
-from ivory_tower.log import (
-    fmt_agent,
-    fmt_bullet,
-    fmt_duration,
-    fmt_ok,
-    fmt_phase,
-)
+
 from ivory_tower.models import Flags, Manifest, PhaseStatus
 from ivory_tower.templates import load_template
 from ivory_tower.templates.executor import GenericTemplateExecutor
@@ -82,18 +76,10 @@ class RedBlueStrategy:
         )
 
     def run(self, run_dir: Path, config: Any, manifest: Manifest) -> Manifest:
-        logger.info("")
         t0 = time.monotonic()
 
         red_team: list[str] = getattr(config, "red_team", [])
         blue_team: list[str] = getattr(config, "blue_team", [])
-
-        red_str = ", ".join(fmt_agent(a) for a in red_team) if red_team else "unassigned"
-        blue_str = ", ".join(fmt_agent(a) for a in blue_team) if blue_team else "unassigned"
-        logger.info(fmt_phase("Red/Blue Pipeline"))
-        logger.info(fmt_bullet("Red Team: %s"), red_str)
-        logger.info(fmt_bullet("Blue Team: %s"), blue_str)
-        logger.info(fmt_bullet("Judge: %s"), fmt_agent(config.synthesizer))
 
         template = load_template("red-blue")
         executor = GenericTemplateExecutor(template)
@@ -123,12 +109,6 @@ class RedBlueStrategy:
 
         manifest.total_duration_seconds = time.monotonic() - t0
         manifest.save(run_dir / "manifest.json")
-
-        logger.info("")
-        logger.info(
-            fmt_ok("Red/Blue pipeline complete [duration](%s)[/duration]"),
-            fmt_duration(manifest.total_duration_seconds),
-        )
 
         return manifest
 

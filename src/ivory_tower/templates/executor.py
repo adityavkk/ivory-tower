@@ -17,12 +17,25 @@ from typing import Any
 from ivory_tower.executor import get_executor
 from ivory_tower.executor.types import AgentExecutor, AgentOutput
 from ivory_tower.log import (
+    create_agent_progress,
     fmt_agent,
     fmt_bullet,
     fmt_duration,
     fmt_ok,
     fmt_phase,
+    log_agent_complete,
+    log_blackboard_sync,
+    log_isolation_setup,
+    log_phase_complete,
+    log_phase_header,
+    log_pipeline_complete,
+    log_pipeline_header,
+    log_round_complete,
+    log_round_header,
+    log_sandbox_cleanup,
+    log_sandbox_setup,
     phase_spinner,
+    SYM_OK,
 )
 from ivory_tower.sandbox import get_provider
 from ivory_tower.sandbox.blackboard import FileBlackboard
@@ -187,17 +200,11 @@ class GenericTemplateExecutor:
 
         template_name = self.template.name
         total_phases = len(self.template.phases)
-        logger.info("")
-        logger.info(fmt_phase("%s Template -- %d phases"), template_name, total_phases)
-        agents_str = ", ".join(fmt_agent(a) for a in agents)
-        logger.info(fmt_bullet("Agents: %s"), agents_str)
-        logger.info(fmt_bullet("Synthesizer: %s"), fmt_agent(synthesizer))
-        logger.info(fmt_bullet("Sandbox: %s"), sandbox_backend)
 
         t0_total = time.monotonic()
 
         try:
-            # Create agent sandboxes (including synthesizer if not in agents list)
+            # -- Create agent sandboxes --
             all_participants = list(agents)
             if synthesizer and synthesizer not in all_participants:
                 all_participants.append(synthesizer)
@@ -210,7 +217,8 @@ class GenericTemplateExecutor:
                     config=config,
                 )
 
-            # Create shared volumes for blackboards
+            # -- Create shared volumes for blackboards --
+            volume_names: list[str] = []
             for phase in self.template.phases:
                 if phase.blackboard:
                     bb = phase.blackboard
@@ -220,11 +228,12 @@ class GenericTemplateExecutor:
                             run_id=run_id,
                             run_dir=run_dir,
                         )
+                        volume_names.append(bb.name)
                         # Initialize blackboard file if specified
                         if bb.file:
                             volumes[bb.name].write_file(bb.file, "")
 
-            # Create team volumes if needed
+            # -- Create team volumes if needed --
             if teams:
                 team_names = set(teams.values())
                 for team_name in team_names:
@@ -235,8 +244,13 @@ class GenericTemplateExecutor:
                             run_id=run_id,
                             run_dir=run_dir,
                         )
+                        volume_names.append(vol_name)
 
-            # Execute phases in order
+            # -- Pipeline header + sandbox setup in timeline --
+            log_pipeline_header(template_name, total_phases, agents, synthesizer, sandbox_backend)
+            log_sandbox_setup(sandbox_backend, all_participants, volume_names or None)
+
+            # -- Execute phases in order --
             for phase_idx, phase in enumerate(self.template.phases, 1):
                 phase_agents = self._resolve_phase_agents(
                     phase, agents, synthesizer, teams, outputs,
@@ -249,29 +263,17 @@ class GenericTemplateExecutor:
                         phase_sandboxes[a] = sandboxes[synthesizer]
 
                 # Only phases that explicitly declare rounds are iterative.
-                # defaults.rounds provides a fallback count for those phases.
-                # rounds_override can override that count but won't make a
-                # non-iterative phase iterative.
                 if phase.rounds is not None:
                     num_rounds = rounds_override or phase.rounds or self.template.defaults.rounds
                 else:
                     num_rounds = None
 
-                # -- Phase header --
                 phase_desc = phase.description or phase.name
-                phase_agents_str = ", ".join(fmt_agent(a) for a in phase_agents)
-                logger.info("")
-                logger.info(
-                    fmt_phase("Phase %d/%d -- %s"),
+
+                log_phase_header(
                     phase_idx, total_phases, phase_desc,
+                    phase.isolation, phase_agents, num_rounds,
                 )
-                logger.info(fmt_bullet("Agents: %s"), phase_agents_str)
-                logger.info(
-                    fmt_bullet("Isolation: %s"),
-                    phase.isolation,
-                )
-                if num_rounds:
-                    logger.info(fmt_bullet("Rounds: %d"), num_rounds)
 
                 t0_phase = time.monotonic()
 
@@ -279,31 +281,27 @@ class GenericTemplateExecutor:
                     outputs[phase.name] = self._run_iterative_phase(
                         phase, phase_sandboxes, volumes, outputs,
                         executor, run_dir, topic, teams, num_rounds, verbose,
+                        phase_idx=phase_idx, total_phases=total_phases,
                     )
                 else:
                     outputs[phase.name] = self._run_single_phase(
                         phase, phase_sandboxes, volumes, outputs,
                         executor, run_dir, topic, teams, verbose,
+                        phase_idx=phase_idx, total_phases=total_phases,
                     )
 
                 phase_elapsed = time.monotonic() - t0_phase
-                logger.info(
-                    fmt_ok("Phase %d/%d complete [duration](%s)[/duration]"),
-                    phase_idx, total_phases, fmt_duration(phase_elapsed),
-                )
+                log_phase_complete(phase_idx, total_phases, phase_elapsed)
 
         finally:
-            # Cleanup
+            # -- Cleanup --
+            log_sandbox_cleanup(len(sandboxes), sandbox_backend)
             for sandbox in sandboxes.values():
                 sandbox.destroy()
             provider.destroy_all(run_id)
 
         total_elapsed = time.monotonic() - t0_total
-        logger.info("")
-        logger.info(
-            fmt_ok("%s template complete [duration](%s)[/duration]"),
-            template_name, fmt_duration(total_elapsed),
-        )
+        log_pipeline_complete(template_name, total_elapsed)
 
         return outputs
 
@@ -341,6 +339,56 @@ class GenericTemplateExecutor:
             return result
         return agents
 
+    def _log_isolation_setup(
+        self,
+        phase: PhaseConfig,
+        sandboxes: dict[str, Sandbox],
+        volumes: dict[str, SharedVolume],
+        outputs: dict[str, dict[str, Path]],
+        teams: dict[str, str] | None,
+    ) -> None:
+        """Log what the isolation setup will do before it runs."""
+        match phase.isolation:
+            case "full" | "none":
+                log_isolation_setup(phase.isolation)
+            case "read-peers":
+                input_phase = phase.input_from
+                if isinstance(input_phase, list):
+                    input_phase = input_phase[0]
+                if input_phase and input_phase in outputs:
+                    n_peers = len(outputs[input_phase])
+                    log_isolation_setup(phase.isolation, f"copying {n_peers} peer outputs from '{input_phase}'")
+                else:
+                    log_isolation_setup(phase.isolation)
+            case "read-all":
+                phases = phase.input_from or []
+                if isinstance(phases, str):
+                    phases = [phases]
+                avail = [p for p in phases if p in outputs]
+                if avail:
+                    log_isolation_setup(phase.isolation, f"feeding outputs from {', '.join(avail)}")
+                else:
+                    log_isolation_setup(phase.isolation)
+            case "blackboard" | "read-blackboard":
+                if phase.blackboard:
+                    mode = "read+append" if phase.isolation == "blackboard" else "read-only"
+                    log_isolation_setup(phase.isolation, f"'{phase.blackboard.name}' ({mode})")
+                else:
+                    log_isolation_setup(phase.isolation)
+            case "team":
+                if teams:
+                    team_counts: dict[str, int] = {}
+                    for t in teams.values():
+                        team_counts[t] = team_counts.get(t, 0) + 1
+                    desc = ", ".join(f"{k}={v}" for k, v in team_counts.items())
+                    log_isolation_setup(phase.isolation, f"teams: {desc}")
+                else:
+                    log_isolation_setup(phase.isolation)
+            case "cross-team-read":
+                log_isolation_setup(phase.isolation, "opposing team outputs")
+            case _:
+                log_isolation_setup(phase.isolation)
+
     def _run_single_phase(
         self,
         phase: PhaseConfig,
@@ -352,8 +400,11 @@ class GenericTemplateExecutor:
         topic: str,
         teams: dict[str, str] | None,
         verbose: bool,
+        phase_idx: int = 0,
+        total_phases: int = 0,
     ) -> dict[str, Path]:
         """Run a non-iterative phase."""
+        self._log_isolation_setup(phase, sandboxes, volumes, outputs, teams)
         setup_phase_isolation(phase, sandboxes, volumes, outputs, teams)
 
         phase_outputs: dict[str, Path] = {}
@@ -363,44 +414,58 @@ class GenericTemplateExecutor:
 
         # Run all agents (parallel if multiple)
         if n_agents > 1:
-            logger.info(fmt_bullet("%d agents running concurrently"), n_agents)
-            with ThreadPoolExecutor(max_workers=n_agents) as pool:
-                futures = {}
-                for agent_name, sandbox in sandboxes.items():
-                    futures[agent_name] = pool.submit(
-                        executor.run,
-                        sandbox,
-                        agent_name,
-                        prompt,
-                        f"output/{phase.name}",
-                        verbose=verbose,
+            logger.info("  [dim]│[/dim]  [dim]%d agents running concurrently[/dim]", n_agents)
+            progress = create_agent_progress()
+            with progress:
+                tasks: dict[str, Any] = {}
+                for agent_name in sandboxes:
+                    tasks[agent_name] = progress.add_task(
+                        f"  [dim]│[/dim]  {fmt_agent(agent_name)}", total=None,
                     )
-                for agent_name, future in futures.items():
-                    result = future.result()
-                    output_filename = _safe_format(phase.output, agent=agent_name)
-                    canonical = run_dir / phase.name / output_filename
-                    canonical.parent.mkdir(parents=True, exist_ok=True)
-                    sandboxes[agent_name].copy_out(result.report_path, canonical)
-                    phase_outputs[agent_name] = canonical
-                    logger.debug(
-                        "Agent %s output -> %s", agent_name, canonical,
-                    )
+
+                with ThreadPoolExecutor(max_workers=n_agents) as pool:
+                    futures = {}
+                    timers: dict[str, float] = {}
+                    for agent_name, sandbox in sandboxes.items():
+                        timers[agent_name] = time.monotonic()
+                        futures[agent_name] = pool.submit(
+                            executor.run,
+                            sandbox,
+                            agent_name,
+                            prompt,
+                            f"output/{phase.name}",
+                            verbose=verbose,
+                        )
+                    for agent_name, future in futures.items():
+                        result = future.result()
+                        elapsed = time.monotonic() - timers[agent_name]
+                        output_filename = _safe_format(phase.output, agent=agent_name)
+                        canonical = run_dir / phase.name / output_filename
+                        canonical.parent.mkdir(parents=True, exist_ok=True)
+                        sandboxes[agent_name].copy_out(result.report_path, canonical)
+                        phase_outputs[agent_name] = canonical
+                        progress.update(
+                            tasks[agent_name],
+                            description=f"  [dim]│[/dim]  [ok]{SYM_OK}[/ok] {fmt_agent(agent_name)} [duration]({fmt_duration(elapsed)})[/duration]",
+                            completed=100, total=100,
+                        )
+                        logger.debug("Agent %s output -> %s", agent_name, canonical)
         else:
             for agent_name, sandbox in sandboxes.items():
+                t0_agent = time.monotonic()
                 with phase_spinner(f"{fmt_agent(agent_name)} working..."):
                     result = executor.run(
                         sandbox, agent_name, prompt,
                         f"output/{phase.name}",
                         verbose=verbose,
                     )
+                agent_elapsed = time.monotonic() - t0_agent
                 output_filename = _safe_format(phase.output, agent=agent_name)
                 canonical = run_dir / phase.name / output_filename
                 canonical.parent.mkdir(parents=True, exist_ok=True)
                 sandbox.copy_out(result.report_path, canonical)
                 phase_outputs[agent_name] = canonical
-                logger.debug(
-                    "Agent %s output -> %s", agent_name, canonical,
-                )
+                log_agent_complete(agent_name, agent_elapsed)
 
         return phase_outputs
 
@@ -416,6 +481,8 @@ class GenericTemplateExecutor:
         teams: dict[str, str] | None,
         num_rounds: int,
         verbose: bool,
+        phase_idx: int = 0,
+        total_phases: int = 0,
     ) -> dict[str, Path]:
         """Run a round-based phase (debate rounds, optimization loops)."""
         blackboard = None
@@ -425,16 +492,16 @@ class GenericTemplateExecutor:
                 file_name=phase.blackboard.file,
                 access_mode=phase.blackboard.access,
             )
+            logger.debug(
+                "Blackboard initialized: name=%s file=%s access=%s",
+                phase.blackboard.name, phase.blackboard.file, phase.blackboard.access,
+            )
 
         phase_outputs: dict[str, Path] = {}
         agent_names = list(sandboxes.keys())
 
         for round_num in range(1, num_rounds + 1):
-            logger.info(
-                fmt_bullet("Round %d/%d -- agents: %s"),
-                round_num, num_rounds,
-                ", ".join(fmt_agent(a) for a in agent_names),
-            )
+            log_round_header(round_num, num_rounds, agent_names)
             t0_round = time.monotonic()
 
             # Refresh blackboard content in each sandbox
@@ -445,10 +512,12 @@ class GenericTemplateExecutor:
                         f"blackboard/{phase.blackboard.file}",
                         current_bb,
                     )
+                log_blackboard_sync("push", chars=len(current_bb))
 
             # Run agents sequentially within each round (turn-based)
             for agent_name, sandbox in sandboxes.items():
                 prompt = topic
+                t0_agent = time.monotonic()
                 with phase_spinner(
                     f"{fmt_agent(agent_name)} (round {round_num}/{num_rounds})"
                 ):
@@ -459,6 +528,7 @@ class GenericTemplateExecutor:
                         f"output/{phase.name}/round-{round_num:02d}",
                         verbose=verbose,
                     )
+                agent_elapsed = time.monotonic() - t0_agent
 
                 # Copy output to canonical location
                 output_filename = _safe_format(
@@ -468,17 +538,18 @@ class GenericTemplateExecutor:
                 canonical.parent.mkdir(parents=True, exist_ok=True)
                 sandbox.copy_out(result.report_path, canonical)
 
+                log_agent_complete(agent_name, agent_elapsed, f"round {round_num}/{num_rounds}")
+
                 # Orchestrator appends to blackboard
                 if blackboard and phase.blackboard:
                     if phase.blackboard.access in ("append", "rw"):
                         report_text = canonical.read_text()
                         blackboard.append(agent_name, round_num, report_text)
+                        log_blackboard_sync("pull", agent_name=agent_name, chars=len(report_text))
 
                 phase_outputs[f"{agent_name}-round-{round_num}"] = canonical
 
             round_elapsed = time.monotonic() - t0_round
-            logger.debug(
-                "Round %d complete (%s)", round_num, fmt_duration(round_elapsed),
-            )
+            log_round_complete(round_num, num_rounds, round_elapsed)
 
         return phase_outputs

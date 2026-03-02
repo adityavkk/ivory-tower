@@ -9,13 +9,7 @@ from typing import Any
 
 from rich.console import Console
 
-from ivory_tower.log import (
-    fmt_agent,
-    fmt_bullet,
-    fmt_duration,
-    fmt_ok,
-    fmt_phase,
-)
+
 from ivory_tower.models import Flags, Manifest, PhaseStatus
 from ivory_tower.templates import load_template
 from ivory_tower.templates.executor import GenericTemplateExecutor
@@ -70,13 +64,7 @@ class MapReduceStrategy:
         )
 
     def run(self, run_dir: Path, config: Any, manifest: Manifest) -> Manifest:
-        logger.info("")
         t0 = time.monotonic()
-
-        agents_str = ", ".join(fmt_agent(a) for a in config.agents)
-        logger.info(fmt_phase("Map/Reduce Pipeline"))
-        logger.info(fmt_bullet("Agents: %s"), agents_str)
-        logger.info(fmt_bullet("Synthesizer: %s"), fmt_agent(config.synthesizer))
 
         template = load_template("map-reduce")
         executor = GenericTemplateExecutor(template)
@@ -98,12 +86,6 @@ class MapReduceStrategy:
 
         manifest.total_duration_seconds = time.monotonic() - t0
         manifest.save(run_dir / "manifest.json")
-
-        logger.info("")
-        logger.info(
-            fmt_ok("Map/Reduce pipeline complete [duration](%s)[/duration]"),
-            fmt_duration(manifest.total_duration_seconds),
-        )
 
         return manifest
 
