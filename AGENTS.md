@@ -6,9 +6,9 @@ Multi-agent deep research orchestrator. Python CLI (`ivory`) coordinating AI cod
 
 Ivory-tower dispatches N agents to research a topic in parallel, challenges them against each other, and synthesizes a final report. Five strategies: council (3-phase), adversarial (GEPA optimization), debate, map-reduce, red-blue. YAML template system for declarative strategy definitions. Pluggable sandbox providers for agent isolation.
 
-## Current Focus
+## Current Status
 
-ACP-native agent invocation (`spec/06-ACP-SPEC.md`). The core ACP plumbing is implemented: agent configs, ACP client with sandbox-enforced tool routing, ACP and headless executors, protocol-based executor routing. The next step is migrating `council.py` and `adversarial.py` from direct `run_counselors()` calls to using `executor.run()` via the new executors. Counselors integration is preserved alongside ACP -- not replaced yet.
+ACP integration complete. All strategies (council, adversarial) use `AgentExecutor.run()` -- no direct `run_counselors()` calls remain. Counselors executor preserved as legacy fallback.
 
 Adversarial strategy has known issues tracked in `spec/07-GEPA-FIXES.md`.
 
@@ -108,7 +108,55 @@ Agents are invoked through the `AgentExecutor` protocol. The executor is selecte
 | -- | `CounselorsExecutor` (`executor/counselors_exec.py`) | `counselors` | Legacy. Wraps `counselors run` subprocess. Filesystem-convention output parsing. |
 | -- | `DirectExecutor` (`executor/direct.py`) | `direct` | Raw litellm API calls. No agent runtime. |
 
-Agent configs live in `~/.ivory-tower/agents/<name>.yml`. See `spec/06-ACP-SPEC.md` Appendix A for config examples.
+Agent configs live in `~/.ivory-tower/agents/<name>.yml`.
+
+### Agent Config Format
+
+```yaml
+# ~/.ivory-tower/agents/opencode-fast-1.yml
+name: opencode-fast-1
+command: opencode
+args: ["acp"]
+protocol: acp
+env:
+  OPENCODE_CONFIG_CONTENT: '{"model": "wibey/claude-haiku-4-5-20251001"}'
+```
+
+Fields: `name` (must match filename), `command` (binary on PATH or absolute), `args` (CLI args), `protocol` (`acp`|`headless`|`counselors`|`direct`), `env` (supports `${VAR}` expansion), `output_format` (headless only: `text`|`json`|`jsonl`|`stream-json`). The `capabilities` field exists on `AgentConfig` but is not currently used by any executor.
+
+### ACP Data Flow
+
+Strategies never scrape the filesystem for agent output. The flow:
+
+```
+Strategy builds prompt (prompts.py templates)
+  -> executor.run(sandbox, agent_name, prompt, output_dir)
+    -> ACPExecutor spawns agent subprocess via spawn_agent_process()
+    -> ACP lifecycle: initialize -> new_session -> prompt
+    -> Agent runs (uses its own tools: webfetch, grep, etc.)
+    -> Agent text streams back as AgentMessageChunk over stdio
+    -> SandboxACPClient.accumulated_text collects all chunks
+    -> client.get_full_text() -> AgentOutput.raw_output
+  -> Strategy reads result.raw_output (in-memory string)
+  -> Strategy writes canonical report to phase1/{agent}-report.md
+  -> Next phase bakes prior reports into prompt template text
+```
+
+Agent file operations (readTextFile, writeTextFile, createTerminal) route through `SandboxACPClient` which enforces path traversal prevention and isolation modes. Agent's own tools (webfetch, glob, etc.) execute inside the agent process -- ivory-tower sees these as informational `tool_call_update` notifications only.
+
+### Sandbox + ACP Integration
+
+With `--sandbox local`, each agent gets an isolated workspace at `run_dir/sandboxes/{agent}/workspace/`. The `SandboxACPClient` enforces:
+
+| Check | Where | What |
+|-------|-------|------|
+| Path traversal | `_resolve_sandbox_path()` | `Path.relative_to(workspace)` rejects `../../` escapes |
+| Peer isolation | `_check_read_allowed()` | Blocks reads to `peers/` in `full` and `read-blackboard` modes |
+| Blackboard isolation | `_check_read_allowed()` | Blocks reads to `blackboard/` in `full` and `read-peers` modes |
+| Write restrictions | `_check_write_allowed()` | Blocks writes to `peers/` and `blackboard/` in all modes except `none` |
+| Permissions | `request_permission()` | Policy-based: `auto-approve`, `reads-only`, `reject-all` |
+
+The 10MB stdio buffer (`transport_kwargs={"limit": 10*1024*1024}`) in `acp_exec.py` is required because agent tool results (e.g., webfetch of large pages) produce JSON-RPC lines exceeding asyncio's default 64KB `StreamReader` limit.
 
 ## Fragile Areas -- Tread Carefully
 

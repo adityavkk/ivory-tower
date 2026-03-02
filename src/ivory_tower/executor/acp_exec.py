@@ -113,6 +113,7 @@ class ACPExecutor:
             *cmd_args,
             env=env,
             cwd=str(sandbox.workspace_dir),
+            transport_kwargs={"limit": 10 * 1024 * 1024},  # 10 MB stdio buffer
         ) as (conn, proc):
             # Step 1: Initialize
             init_response = await conn.initialize(protocol_version=1)

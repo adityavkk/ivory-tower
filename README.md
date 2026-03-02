@@ -2,7 +2,7 @@
 
 Multi-agent deep research from the terminal.
 
-Orchestrates [counselors](https://github.com/anomalyco/counselors) agents to research a topic in parallel, challenge each other's work, and synthesize a final report.
+Orchestrates AI coding agents via [ACP](https://agentclientprotocol.com) (Agent Client Protocol) to research a topic in parallel, challenge each other's work, and synthesize a final report. Also supports headless CLI agents and legacy [counselors](https://github.com/anomalyco/counselors) as fallback.
 
 Five strategies. **Council** and **adversarial** are battle-tested. **Debate**, **map-reduce**, and **red-blue** are implemented via the YAML template engine but not yet live-tested.
 
@@ -70,31 +70,74 @@ graph TD
 ### Installation
 
 ```bash
-# requires: python 3.12+, uv, counselors
+# requires: python 3.12+, uv
 uv tool install ivory-tower
 
 # with adversarial strategy support (GEPA)
 uv tool install "ivory-tower[adversarial]"
 ```
 
+### Agent Setup
+
+Create YAML configs in `~/.ivory-tower/agents/`, one per agent. Agent names must match the filename.
+
+```yaml
+# ~/.ivory-tower/agents/opencode-haiku.yml
+name: opencode-haiku
+command: opencode           # binary on PATH
+args: ["acp"]               # starts OpenCode in ACP mode
+protocol: acp               # ACP over stdio (Tier 1)
+env:
+  OPENCODE_CONFIG_CONTENT: '{"model": "wibey/claude-haiku-4-5-20251001"}'
+```
+
+```yaml
+# ~/.ivory-tower/agents/opencode-gpt.yml
+name: opencode-gpt
+command: opencode
+args: ["acp"]
+protocol: acp
+env:
+  OPENCODE_CONFIG_CONTENT: '{"model": "openai/gpt-5.3-codex-spark"}'
+```
+
+```yaml
+# ~/.ivory-tower/agents/codex-headless.yml
+name: codex-headless
+command: codex
+args: ["-m", "gpt-5.3-codex", "--quiet"]
+protocol: headless           # non-ACP CLI (Tier 2)
+output_format: text
+```
+
+Verify: `ivory agents`
+
 ### Quick start
 
 ```bash
-# council (default) -- 3 agents research, cross-review, then synthesize
+# council (default) -- 2 agents research, cross-review, synthesize
 ivory research "state of WebAssembly in 2026" \
-  -a claude-opus,codex-5.3-xhigh,amp-deep \
-  -s claude-opus
+  -a opencode-haiku,opencode-gpt \
+  -s opencode-haiku
 
-# adversarial -- 2 agents produce seed reports, iteratively optimize via GEPA judging
-ivory research "state of WebAssembly in 2026" \
+# with local sandboxing (each agent gets isolated workspace)
+ivory research "topic" \
+  -a opencode-haiku,opencode-gpt \
+  -s opencode-haiku \
+  --sandbox local -v
+
+# adversarial -- iterative optimization scored by opposing agent via GEPA
+ivory research "topic" \
   --strategy adversarial \
-  -a claude-opus,codex-5.3-xhigh \
-  -s claude-opus \
+  -a opencode-haiku,opencode-gpt \
+  -s opencode-haiku \
   --max-rounds 5
 
-# read topic from file, pipe from stdin
-ivory research -f topic.md -a claude-opus,codex-5.3-xhigh -s claude-opus
-cat topic.md | ivory research -a claude-opus,codex-5.3-xhigh -s claude-opus
+# read topic from file
+ivory research -f topic.md -a opencode-haiku,opencode-gpt -s opencode-haiku
+
+# stream live agent output
+ivory research "topic" -a opencode-haiku,opencode-gpt -s opencode-haiku --stream
 ```
 
 ### Strategies
@@ -168,9 +211,9 @@ ivory profiles           # list all profiles
 
 ### Sandboxing
 
-Agent isolation for template-based strategies (debate, map-reduce, red-blue). Each agent runs in its own sandbox; shared state flows through orchestrator-mediated blackboards -- agents never write to shared volumes directly.
+Each agent runs in its own sandbox; shared state flows through orchestrator-mediated blackboards -- agents never write to shared volumes directly. All strategies (council, adversarial, template-based) support `--sandbox`.
 
-> Council and adversarial use direct filesystem paths and currently ignore `--sandbox`.
+For ACP agents, `SandboxACPClient` intercepts `readTextFile`/`writeTextFile`/`createTerminal` calls and routes them through the sandbox with path traversal prevention and isolation mode enforcement. For headless agents, isolation depends on the sandbox backend's OS-level enforcement.
 
 #### Backends
 
@@ -359,9 +402,11 @@ Rich markup tags used in log messages:
 
 - Python 3.12+
 - [uv](https://github.com/astral-sh/uv)
-- [counselors](https://github.com/anomalyco/counselors) installed and configured with at least 2 agents
-- [gepa](https://github.com/anomalyco/gepa) for the adversarial strategy (`uv tool install "ivory-tower[adversarial]"`)
+- At least 2 ACP-compatible agents on PATH (e.g., [OpenCode](https://github.com/anomalyco/opencode) with `opencode acp`)
+- Agent configs in `~/.ivory-tower/agents/` (see Agent Setup above)
+- Optional: [gepa](https://github.com/anomalyco/gepa) for adversarial strategy (`uv tool install "ivory-tower[adversarial]"`)
+- Optional: [counselors](https://github.com/anomalyco/counselors) for legacy executor fallback
 
 ### Inspired by
 
-[hamelsmu/research-council](https://github.com/hamelsmu/research-council) · [counselors](https://github.com/anomalyco/counselors) · [GEPA](https://github.com/anomalyco/gepa) · [clig.dev](https://clig.dev/)
+[hamelsmu/research-council](https://github.com/hamelsmu/research-council) · [ACP](https://agentclientprotocol.com) · [counselors](https://github.com/anomalyco/counselors) · [GEPA](https://github.com/anomalyco/gepa) · [clig.dev](https://clig.dev/)
