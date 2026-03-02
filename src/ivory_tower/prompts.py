@@ -157,7 +157,10 @@ and then provide your scores as structured JSON.
 
 ## Step 1: Evaluate
 
-Analyze the report across these five dimensions, rating each from 1 (poor) to 10 (excellent):
+Analyze the report across these five dimensions, rating each with a LETTER grade
+from this exact scale only:
+
+`A, A-, B+, B, B-, C+, C, C-, D, F`
 
 1. **Factual Accuracy** -- Are claims well-sourced and verifiable? Any errors or unsupported assertions?
 2. **Depth of Analysis** -- Does the report go beyond surface-level description into genuine insight?
@@ -171,11 +174,14 @@ iteratively improve this report.
 
 ## Step 2: Output JSON
 
-After your analysis, you MUST output your scores as a JSON object on the FINAL LINE
+After your analysis, you MUST output your evaluation as a JSON object on the FINAL LINE
 of your response. The JSON object must contain these exact keys:
 
-- `overall_score` -- float from 1 to 10 (weighted average of dimensions)
-- `dimensions` -- object with keys: `factual_accuracy`, `depth_of_analysis`, `source_quality`, `coverage_breadth`, `analytical_rigor` (each an integer 1-10)
+- `overall_grade` -- one of: `A, A-, B+, B, B-, C+, C, C-, D, F`
+- `dimension_grades` -- object with keys: `factual_accuracy`, `depth_of_analysis`, `source_quality`, `coverage_breadth`, `analytical_rigor` (each value MUST be one of the allowed letter grades)
+- `dimensions` -- object with the same keys as `dimension_grades`, each a numeric score from 1-10 using this deterministic mapping:
+  - `A=9.5, A-=9.0, B+=8.5, B=8.0, B-=7.5, C+=7.0, C=6.5, C-=6.0, D=5.0, F=3.0`
+- `overall_score` -- numeric 1-10 (average of `dimensions`)
 - `strengths` -- array of strings (specific things the report does well)
 - `weaknesses` -- array of strings (specific problems or gaps)
 - `suggestions` -- array of strings (concrete, actionable improvements)
@@ -183,7 +189,7 @@ of your response. The JSON object must contain these exact keys:
 
 Here is an example of the expected JSON format:
 
-{{"overall_score": 6.5, "dimensions": {{"factual_accuracy": 7, "depth_of_analysis": 6, "source_quality": 5, "coverage_breadth": 7, "analytical_rigor": 6}}, "strengths": ["Comprehensive coverage of major subtopics", "Good use of recent primary sources in Section 3"], "weaknesses": ["Section 2 lacks citations for key claims", "No discussion of counterarguments to the main thesis"], "suggestions": ["Add primary sources for the claims in Section 2", "Include a subsection on limitations and opposing viewpoints"], "critique": "The report provides a solid overview of the topic with good breadth. However, several claims in Section 2 are presented without supporting evidence, which undermines the overall credibility. The analysis would benefit from engaging with counterarguments rather than presenting a one-sided view."}}
+{{"overall_grade": "B-", "dimension_grades": {{"factual_accuracy": "B", "depth_of_analysis": "C+", "source_quality": "C", "coverage_breadth": "B", "analytical_rigor": "C+"}}, "dimensions": {{"factual_accuracy": 8.0, "depth_of_analysis": 7.0, "source_quality": 6.5, "coverage_breadth": 8.0, "analytical_rigor": 7.0}}, "overall_score": 7.3, "strengths": ["Comprehensive coverage of major subtopics", "Good use of recent primary sources in Section 3"], "weaknesses": ["Section 2 lacks citations for key claims", "No discussion of counterarguments to the main thesis"], "suggestions": ["Add primary sources for the claims in Section 2", "Include a subsection on limitations and opposing viewpoints"], "critique": "The report provides a solid overview of the topic with good breadth. However, several claims in Section 2 are presented without supporting evidence, which undermines the overall credibility. The analysis would benefit from engaging with counterarguments rather than presenting a one-sided view."}}
 
 IMPORTANT: The JSON object must appear on the very last line of your response."""
 

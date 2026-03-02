@@ -45,6 +45,7 @@ from ivory_tower.prompts import (
     build_judging_prompt,
     build_research_prompt,
 )
+from ivory_tower.strategies.judge_scoring import normalize_judge_evaluation
 
 
 def _now_iso() -> str:
@@ -177,14 +178,22 @@ formatting. Return ONLY the JSON object.
 ## Required JSON Schema
 
 {{
-  "overall_score": <float 1.0-10.0>,
-  "dimensions": {{
-    "factual_accuracy": <int 1-10>,
-    "depth_of_analysis": <int 1-10>,
-    "source_quality": <int 1-10>,
-    "coverage_breadth": <int 1-10>,
-    "analytical_rigor": <int 1-10>
+  "overall_grade": <one of A, A-, B+, B, B-, C+, C, C-, D, F>,
+  "dimension_grades": {{
+    "factual_accuracy": <grade>,
+    "depth_of_analysis": <grade>,
+    "source_quality": <grade>,
+    "coverage_breadth": <grade>,
+    "analytical_rigor": <grade>
   }},
+  "dimensions": {{
+    "factual_accuracy": <float 1-10>,
+    "depth_of_analysis": <float 1-10>,
+    "source_quality": <float 1-10>,
+    "coverage_breadth": <float 1-10>,
+    "analytical_rigor": <float 1-10>
+  }},
+  "overall_score": <float 1.0-10.0>,
   "strengths": [<string>, ...],
   "weaknesses": [<string>, ...],
   "suggestions": [<string>, ...],
@@ -194,6 +203,8 @@ formatting. Return ONLY the JSON object.
 Rules:
 - If the text contains explicit scores, use those exact values.
 - If the text describes quality without explicit scores, infer reasonable scores from context.
+- Use this deterministic mapping for grades -> numeric scores:
+  A=9.5, A-=9.0, B+=8.5, B=8.0, B-=7.5, C+=7.0, C=6.5, C-=6.0, D=5.0, F=3.0
 - The "critique" field should be a 2-3 paragraph summary of the evaluation.
 - "strengths", "weaknesses", and "suggestions" should each contain 2-5 items.
 - Return ONLY valid JSON. No markdown fences, no prose, no explanation.
@@ -256,10 +267,12 @@ def _llm_extract_json(
     if extracted is not None:
         try:
             data = json.loads(extracted)
-            if isinstance(data, dict) and "overall_score" in data:
+            normalized = normalize_judge_evaluation(data) if isinstance(data, dict) else None
+            if normalized is not None:
+                score, _ = normalized
                 logger.info(
                     "[parse-agent] Successfully extracted JSON via %s: score=%.1f",
-                    parse_agent, float(data.get("overall_score", 0)),
+                    parse_agent, score,
                 )
                 return extracted
         except (json.JSONDecodeError, TypeError, ValueError):
@@ -281,7 +294,7 @@ def _extract_json_from_markdown(text: str) -> str | None:
     - Format A: Clean JSON on the full text (OpenAI agents)
     - Format B: JSON in a ```json fenced code block (Anthropic agents)
     - Format C: JSON in any ``` fenced code block
-    - Format D: Raw JSON object containing "overall_score" in the text
+    - Format D: Raw JSON object containing evaluator keys in the text
     """
     if not text or not text.strip():
         return None
@@ -339,10 +352,14 @@ def _extract_json_from_markdown(text: str) -> str | None:
             except (json.JSONDecodeError, ValueError):
                 continue
 
-    # Strategy 4: Find a raw JSON object containing "overall_score"
-    logger.debug("Trying JSON extraction strategy 4: raw JSON with overall_score")
+    # Strategy 4: Find a raw JSON object containing likely evaluator keys.
+    logger.debug("Trying JSON extraction strategy 4: raw JSON with evaluator keys")
     # Use a greedy match from { to the last } to handle nested objects
-    for match in re.finditer(r'\{[^{}]*"overall_score"[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL):
+    for match in re.finditer(
+        r'\{[^{}]*(?:"overall_score"|"overall_grade"|"dimension_grades"|"dimensions")[^{}]*(?:\{[^{}]*\}[^{}]*)*\}',
+        text,
+        re.DOTALL,
+    ):
         candidate = match.group(0).strip()
         try:
             json.loads(candidate)
@@ -450,17 +467,9 @@ def parse_judge_output(
         if json_str is not None:
             try:
                 data = json.loads(json_str)
-                if isinstance(data, dict) and "overall_score" in data:
-                    score = float(data.get("overall_score", 0.0))
-                    score = max(0.0, min(10.0, score))
-
-                    asi = {
-                        "dimensions": data.get("dimensions", {}),
-                        "strengths": data.get("strengths", []),
-                        "weaknesses": data.get("weaknesses", []),
-                        "suggestions": data.get("suggestions", []),
-                        "critique": data.get("critique", ""),
-                    }
+                normalized = normalize_judge_evaluation(data) if isinstance(data, dict) else None
+                if normalized is not None:
+                    score, asi = normalized
                     logger.info("Judge score from %s: %.1f (JSON parsed)", judging_dir.name, score)
                     return score, asi
             except (json.JSONDecodeError, TypeError, ValueError):
@@ -483,16 +492,9 @@ def parse_judge_output(
         if llm_json is not None:
             try:
                 data = json.loads(llm_json)
-                if isinstance(data, dict) and "overall_score" in data:
-                    score = float(data.get("overall_score", 0.0))
-                    score = max(0.0, min(10.0, score))
-                    asi = {
-                        "dimensions": data.get("dimensions", {}),
-                        "strengths": data.get("strengths", []),
-                        "weaknesses": data.get("weaknesses", []),
-                        "suggestions": data.get("suggestions", []),
-                        "critique": data.get("critique", ""),
-                    }
+                normalized = normalize_judge_evaluation(data) if isinstance(data, dict) else None
+                if normalized is not None:
+                    score, asi = normalized
                     logger.info(
                         "Judge score from %s: %.1f (parse-agent %s)",
                         judging_dir.name, score, parse_agent,
@@ -971,21 +973,27 @@ class AdversarialStrategy:
             # Direct LLM mode: call litellm for each agent
             from ivory_tower.strategies.direct_llm import _llm_completion
 
-            for agent in config.agents:
-                with phase_spinner(f"[direct] {fmt_agent(agent)} researching..."):
-                    seed_text = _llm_completion(
-                        model=config.model,
-                        prompt=prompt_text,
-                        api_base=config.api_base,
-                        max_tokens=16384,
-                        temperature=0.4,
-                    )
-                seed_file = phase1_dir / f"{agent}-seed.md"
-                seed_file.write_text(seed_text)
-                logger.info(
-                    fmt_ok("[direct] %s seed: %d chars"),
-                    fmt_agent(agent), len(seed_text),
+            def _generate_seed(agent: str) -> tuple[str, str]:
+                seed_text = _llm_completion(
+                    model=config.model,
+                    prompt=prompt_text,
+                    api_base=config.api_base,
+                    max_tokens=16384,
+                    temperature=0.4,
                 )
+                return agent, seed_text
+
+            with phase_spinner(f"[direct] Agents researching: [agent]{agents_label}[/agent]"):
+                with ThreadPoolExecutor(max_workers=max(1, len(config.agents))) as executor:
+                    futures = [executor.submit(_generate_seed, agent) for agent in config.agents]
+                    for future in as_completed(futures):
+                        agent, seed_text = future.result()
+                        seed_file = phase1_dir / f"{agent}-seed.md"
+                        seed_file.write_text(seed_text)
+                        logger.info(
+                            fmt_ok("[direct] %s seed: %d chars"),
+                            fmt_agent(agent), len(seed_text),
+                        )
         else:
             with phase_spinner(f"Agents researching: [agent]{agents_label}[/agent]"):
                 run_counselors(

@@ -15,6 +15,8 @@ import time
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from ivory_tower.strategies.judge_scoring import normalize_judge_evaluation
+
 logger = logging.getLogger(__name__)
 
 _litellm_quieted = False
@@ -74,6 +76,11 @@ def _parse_evaluation_json(text: str) -> dict[str, Any] | None:
     if not text or not text.strip():
         return None
 
+    def _looks_like_evaluation(obj: Any) -> bool:
+        if not isinstance(obj, dict):
+            return False
+        return any(k in obj for k in ("overall_score", "overall_grade", "dimension_grades", "dimensions"))
+
     # Strategy 1: Last line is JSON (the prompt asks for JSON on final line)
     lines = text.strip().splitlines()
     for line in reversed(lines):
@@ -81,7 +88,7 @@ def _parse_evaluation_json(text: str) -> dict[str, Any] | None:
         if line.startswith("{") and line.endswith("}"):
             try:
                 obj = json.loads(line)
-                if "overall_score" in obj:
+                if _looks_like_evaluation(obj):
                     return obj
             except (json.JSONDecodeError, ValueError):
                 pass
@@ -92,20 +99,20 @@ def _parse_evaluation_json(text: str) -> dict[str, Any] | None:
         block = block.strip()
         try:
             obj = json.loads(block)
-            if "overall_score" in obj:
+            if _looks_like_evaluation(obj):
                 return obj
         except (json.JSONDecodeError, ValueError):
             continue
 
-    # Strategy 3: Any raw JSON with overall_score
+    # Strategy 3: Any raw JSON with likely evaluator keys
     for match in re.finditer(
-        r'\{[^{}]*"overall_score"[^{}]*(?:\{[^{}]*\}[^{}]*)*\}',
+        r'\{[^{}]*(?:"overall_score"|"overall_grade"|"dimension_grades"|"dimensions")[^{}]*(?:\{[^{}]*\}[^{}]*)*\}',
         text,
         re.DOTALL,
     ):
         try:
             obj = json.loads(match.group(0))
-            if "overall_score" in obj:
+            if _looks_like_evaluation(obj):
                 return obj
         except (json.JSONDecodeError, ValueError):
             continue
@@ -162,6 +169,7 @@ def make_direct_evaluator(
                 model=model,
                 prompt=judge_prompt,
                 api_base=api_base,
+                temperature=0.0,
             )
             elapsed = time.monotonic() - start
 
@@ -172,16 +180,10 @@ def make_direct_evaluator(
         # Parse JSON evaluation
         evaluation = _parse_evaluation_json(response_text)
 
-        if evaluation:
-            score = float(evaluation.get("overall_score", 0.0))
-            score = max(0.0, min(10.0, score))
-            asi: dict[str, Any] = {
-                "dimensions": evaluation.get("dimensions", {}),
-                "strengths": evaluation.get("strengths", []),
-                "weaknesses": evaluation.get("weaknesses", []),
-                "suggestions": evaluation.get("suggestions", []),
-                "critique": evaluation.get("critique", ""),
-            }
+        normalized = normalize_judge_evaluation(evaluation) if evaluation else None
+
+        if normalized is not None:
+            score, asi = normalized
         else:
             logger.warning(
                 "[%s] Round %d: failed to parse evaluation JSON from direct LLM response",
@@ -228,6 +230,8 @@ def make_direct_evaluator(
                 "round": round_num,
                 "score": score,
                 "dimensions": dict(dimensions) if dimensions else {},
+                "dimension_grades": asi.get("dimension_grades", {}),
+                "overall_grade": asi.get("overall_grade", ""),
                 "strengths": asi.get("strengths", []),
                 "weaknesses": asi.get("weaknesses", []),
                 "suggestions": asi.get("suggestions", []),
@@ -314,6 +318,8 @@ def make_direct_proposer(
                         feedback = {
                             "score": debug_data["score"],
                             "dimensions": debug_data.get("dimensions", {}),
+                            "dimension_grades": debug_data.get("dimension_grades", {}),
+                            "overall_grade": debug_data.get("overall_grade", ""),
                             "strengths": debug_data.get("strengths", []),
                             "weaknesses": debug_data.get("weaknesses", []),
                             "suggestions": debug_data.get("suggestions", []),
@@ -328,14 +334,16 @@ def make_direct_proposer(
                 if judge_md.exists():
                     response_text = judge_md.read_text()
                     evaluation = _parse_json(response_text)
-                    if evaluation:
+                    normalized = normalize_judge_evaluation(evaluation) if evaluation else None
+                    if normalized is not None:
+                        score, asi = normalized
                         feedback = {
-                            "score": float(evaluation.get("overall_score", 0.0)),
-                            "dimensions": evaluation.get("dimensions", {}),
-                            "strengths": evaluation.get("strengths", []),
-                            "weaknesses": evaluation.get("weaknesses", []),
-                            "suggestions": evaluation.get("suggestions", []),
-                            "critique": evaluation.get("critique", ""),
+                            "score": score,
+                            "dimensions": asi.get("dimensions", {}),
+                            "strengths": asi.get("strengths", []),
+                            "weaknesses": asi.get("weaknesses", []),
+                            "suggestions": asi.get("suggestions", []),
+                            "critique": asi.get("critique", ""),
                         }
 
         if feedback is None:

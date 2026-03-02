@@ -65,6 +65,17 @@ class TestParseEvaluationJson:
         text = '{"some_key": "value"}'
         assert _parse_evaluation_json(text) is None
 
+    def test_json_with_dimension_grades_without_overall_score(self):
+        text = (
+            '{"overall_grade":"B","dimension_grades":'
+            '{"factual_accuracy":"A-","depth_of_analysis":"B",'
+            '"source_quality":"B-","coverage_breadth":"B+",'
+            '"analytical_rigor":"B"}}'
+        )
+        result = _parse_evaluation_json(text)
+        assert result is not None
+        assert result["overall_grade"] == "B"
+
     def test_multiple_json_blocks_picks_one_with_overall_score(self):
         text = (
             "```json\n"

@@ -99,6 +99,28 @@ class TestParseJudgeOutput:
         score, asi = parse_judge_output(tmp_path)
         assert score == 6.0
 
+    def test_letter_grades_without_overall_score(self, tmp_path):
+        data = {
+            "overall_grade": "B",
+            "dimension_grades": {
+                "factual_accuracy": "A-",
+                "depth_of_analysis": "B",
+                "source_quality": "C+",
+                "coverage_breadth": "B+",
+                "analytical_rigor": "B-",
+            },
+            "strengths": ["good breadth"],
+            "weaknesses": ["source quality mixed"],
+            "suggestions": ["add primary sources"],
+            "critique": "solid",
+        }
+        md_file = tmp_path / "agent.md"
+        md_file.write_text(json.dumps(data))
+
+        score, asi = parse_judge_output(tmp_path)
+        assert score == 8.0  # deterministic grade mapping average
+        assert asi["dimensions"]["source_quality"] == 7.0
+
 
 class TestExtractFeedbackFromReflectiveDataset:
     def test_populated_dataset(self):
