@@ -687,12 +687,10 @@ class TestManifestBackwardCompatibility:
 class TestErrorPaths:
     """Error handling for sandbox, template, and profile failures."""
 
-    @patch("ivory_tower.cli.validate_agents", return_value=[])
-    @patch("ivory_tower.cli.list_available_agents", return_value=["a", "b"])
-    @patch("ivory_tower.cli.resolve_counselors_cmd", return_value=["counselors"])
+    @patch("ivory_tower.cli.validate_agent_configs", return_value=[])
     @patch("ivory_tower.sandbox.agentfs.shutil.which", return_value=None)
     def test_cli_sandbox_agentfs_unavailable(
-        self, mock_which, mock_resolve, mock_list, mock_validate,
+        self, mock_which, mock_validate,
     ):
         result = runner.invoke(app, [
             "research", "Test topic",

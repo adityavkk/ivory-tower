@@ -10,12 +10,7 @@ from typing import Annotated, Optional
 import typer
 
 from ivory_tower.log import setup_logging
-from ivory_tower.counselors import (
-    CounselorsError,
-    list_available_agents,
-    resolve_counselors_cmd,
-    validate_agents,
-)
+from ivory_tower.agents import validate_agent_configs
 from ivory_tower.engine import (
     ConfigError,
     RunConfig,
@@ -173,13 +168,6 @@ def research(
         typer.echo("Error: no topic provided. Pass as argument, --file, or pipe to stdin.", err=True)
         raise typer.Exit(code=1)
 
-    # -- check counselors --
-    try:
-        resolve_counselors_cmd()
-    except CounselorsError as exc:
-        typer.echo(f"Error: {exc}", err=True)
-        raise typer.Exit(code=1)
-
     # -- parse agent specs (support @profile-name, model:role, model) --
     agent_specs = [a.strip() for a in agents.split(",")]
     agent_list = []
@@ -187,15 +175,17 @@ def research(
         profile = AgentProfile.from_cli_shorthand(spec)
         agent_list.append(profile.model or profile.name)
 
+    # -- validate agent configs --
     all_agents = agent_list + [synthesizer]
     if parse_agent is not None:
         all_agents.append(parse_agent)
-    available = list_available_agents()
-    invalid = validate_agents(all_agents, available)
+    invalid = validate_agent_configs(all_agents)
     if invalid:
+        from ivory_tower.agents import AGENTS_DIR
+
         typer.echo(
-            f"Error: unknown agents: {', '.join(invalid)}\n"
-            f"Available: {', '.join(available)}",
+            f"Error: no agent config for: {', '.join(invalid)}\n"
+            f"Add YAML configs to {AGENTS_DIR}/ or run 'ivory migrate' to import from counselors.",
             err=True,
         )
         raise typer.Exit(code=1)
@@ -530,6 +520,63 @@ def agents(
 
     console = Console()
     console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# ivory migrate
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def migrate() -> None:
+    """Import agents from counselors into ~/.ivory-tower/agents/ as YAML configs."""
+    from ivory_tower.agents import AGENTS_DIR, load_agents
+
+    try:
+        from ivory_tower.counselors import list_available_agents, resolve_counselors_cmd
+    except ImportError:
+        typer.echo(
+            "Error: counselors is not installed. Install it to use migrate.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        resolve_counselors_cmd()
+    except Exception as exc:
+        typer.echo(f"Error: could not find counselors: {exc}", err=True)
+        raise typer.Exit(code=1)
+
+    available = list_available_agents()
+    if not available:
+        typer.echo("No agents found in counselors.")
+        raise typer.Exit(code=0)
+
+    existing = load_agents()
+    AGENTS_DIR.mkdir(parents=True, exist_ok=True)
+    created = 0
+    skipped = 0
+
+    for name in available:
+        if name in existing:
+            typer.echo(f"  skip: {name} (already configured)")
+            skipped += 1
+            continue
+
+        config_path = AGENTS_DIR / f"{name}.yml"
+        config_path.write_text(
+            f"name: {name}\n"
+            f"command: counselors\n"
+            f"args:\n"
+            f"  - run\n"
+            f"  - --tools\n"
+            f"  - \"{name}\"\n"
+            f"protocol: counselors\n"
+        )
+        typer.echo(f"  created: {config_path}")
+        created += 1
+
+    typer.echo(f"\nMigrated {created} agent(s), skipped {skipped}.")
 
 
 # ---------------------------------------------------------------------------

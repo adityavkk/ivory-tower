@@ -529,10 +529,8 @@ class TestCLIStrategies:
 class TestDryRunAdversarial:
     """--dry-run --strategy adversarial via CLI."""
 
-    @patch("ivory_tower.cli.validate_agents", return_value=[])
-    @patch("ivory_tower.cli.list_available_agents", return_value=["a", "b"])
-    @patch("ivory_tower.cli.resolve_counselors_cmd", return_value=["counselors"])
-    def test_dry_run_adversarial(self, mock_resolve, mock_list, mock_validate):
+    @patch("ivory_tower.cli.validate_agent_configs", return_value=[])
+    def test_dry_run_adversarial(self, mock_validate):
         result = runner.invoke(app, [
             "research",
             "Test adversarial dry run",
@@ -547,10 +545,8 @@ class TestDryRunAdversarial:
         assert "adversarial" in out
         assert "5" in result.output  # max rounds
 
-    @patch("ivory_tower.cli.validate_agents", return_value=[])
-    @patch("ivory_tower.cli.list_available_agents", return_value=["a", "b"])
-    @patch("ivory_tower.cli.resolve_counselors_cmd", return_value=["counselors"])
-    def test_dry_run_council(self, mock_resolve, mock_list, mock_validate):
+    @patch("ivory_tower.cli.validate_agent_configs", return_value=[])
+    def test_dry_run_council(self, mock_validate):
         result = runner.invoke(app, [
             "research",
             "Test council dry run",
@@ -563,10 +559,8 @@ class TestDryRunAdversarial:
         out = result.output.lower()
         assert "dry run" in out
 
-    @patch("ivory_tower.cli.validate_agents", return_value=[])
-    @patch("ivory_tower.cli.list_available_agents", return_value=["a", "b"])
-    @patch("ivory_tower.cli.resolve_counselors_cmd", return_value=["counselors"])
-    def test_dry_run_unknown_strategy_errors(self, mock_resolve, mock_list, mock_validate):
+    @patch("ivory_tower.cli.validate_agent_configs", return_value=[])
+    def test_dry_run_unknown_strategy_errors(self, mock_validate):
         result = runner.invoke(app, [
             "research",
             "Test unknown strategy",
