@@ -11,6 +11,7 @@ import pytest
 from ivory_tower.strategies import get_strategy, list_strategies, STRATEGIES
 from ivory_tower.strategies.base import ResearchStrategy
 from ivory_tower.strategies.council import CouncilStrategy
+from ivory_tower.executor.types import AgentOutput
 from ivory_tower.models import (
     Flags,
     Manifest,
@@ -22,6 +23,32 @@ from ivory_tower.models import (
     AgentResult,
 )
 from ivory_tower.engine import RunConfig
+
+
+# ---------------------------------------------------------------------------
+# Helpers for mocking the executor-based council
+# ---------------------------------------------------------------------------
+
+def _fake_run_agent(executor, sandbox, agent_name, prompt, output_dir, verbose=False):
+    """Mock _run_agent that returns an AgentOutput with synthetic report text."""
+    return AgentOutput(
+        report_path=f"{output_dir}/{agent_name}-report.md",
+        raw_output=f"Report by {agent_name}",
+        duration_seconds=1.0,
+        metadata={"protocol": "mock"},
+    )
+
+
+def _fake_get_executor(agent_name):
+    """Mock _get_executor that returns a MagicMock executor."""
+    return MagicMock(name=f"executor-{agent_name}")
+
+
+def _fake_create_sandbox(run_dir, agent_name, run_id, backend="none"):
+    """Mock _create_sandbox that returns a MagicMock sandbox."""
+    mock = MagicMock(name=f"sandbox-{agent_name}")
+    mock.workspace_dir = run_dir
+    return mock
 
 
 class TestGetStrategy:
@@ -151,10 +178,12 @@ class TestCouncilCreateManifest:
 
 
 class TestCouncilRun:
-    """Tests for CouncilStrategy.run() with mocked counselors."""
+    """Tests for CouncilStrategy.run() with mocked executor."""
 
-    @patch("ivory_tower.strategies.council.run_counselors")
-    def test_run_calls_all_three_phases(self, mock_counselors, tmp_path):
+    @patch("ivory_tower.strategies.council._create_sandbox", side_effect=_fake_create_sandbox)
+    @patch("ivory_tower.strategies.council._get_executor", side_effect=_fake_get_executor)
+    @patch("ivory_tower.strategies.council._run_agent", side_effect=_fake_run_agent)
+    def test_run_calls_all_three_phases(self, mock_run, mock_exec, mock_sandbox, tmp_path):
         s = CouncilStrategy()
         config = RunConfig(
             topic="test", agents=["a", "b"], synthesizer="a",
@@ -168,17 +197,6 @@ class TestCouncilRun:
             (run_dir / d).mkdir(parents=True, exist_ok=True)
         (run_dir / "topic.md").write_text("test")
 
-        # Mock counselors to write output files in a slug subdir
-        # (simulates real counselors behavior)
-        def fake_counselors(prompt_file, agents, output_dir, verbose=False):
-            slug = output_dir / "slug-001"
-            slug.mkdir(parents=True, exist_ok=True)
-            for agent in agents:
-                (slug / f"{agent}.md").write_text(f"Report by {agent}")
-            return MagicMock(returncode=0)
-
-        mock_counselors.side_effect = fake_counselors
-
         result = s.run(run_dir, config, manifest)
 
         # All phases should be complete
@@ -186,8 +204,10 @@ class TestCouncilRun:
         assert result.phases["cross_pollination"].status == PhaseStatus.COMPLETE
         assert result.phases["synthesis"].status == PhaseStatus.COMPLETE
 
-    @patch("ivory_tower.strategies.council.run_counselors")
-    def test_run_saves_manifest(self, mock_counselors, tmp_path):
+    @patch("ivory_tower.strategies.council._create_sandbox", side_effect=_fake_create_sandbox)
+    @patch("ivory_tower.strategies.council._get_executor", side_effect=_fake_get_executor)
+    @patch("ivory_tower.strategies.council._run_agent", side_effect=_fake_run_agent)
+    def test_run_saves_manifest(self, mock_run, mock_exec, mock_sandbox, tmp_path):
         s = CouncilStrategy()
         config = RunConfig(
             topic="test", agents=["a", "b"], synthesizer="a",
@@ -199,26 +219,65 @@ class TestCouncilRun:
         for d in ("phase1", "phase2", "phase3", "logs"):
             (run_dir / d).mkdir(parents=True, exist_ok=True)
 
-        def fake_counselors(prompt_file, agents, output_dir, verbose=False):
-            slug = output_dir / "slug-001"
-            slug.mkdir(parents=True, exist_ok=True)
-            for agent in agents:
-                (slug / f"{agent}.md").write_text(f"Report by {agent}")
-            return MagicMock(returncode=0)
-
-        mock_counselors.side_effect = fake_counselors
-
         s.run(run_dir, config, manifest)
 
         # Manifest should have been saved
         assert (run_dir / "manifest.json").exists()
 
+    @patch("ivory_tower.strategies.council._create_sandbox", side_effect=_fake_create_sandbox)
+    @patch("ivory_tower.strategies.council._get_executor", side_effect=_fake_get_executor)
+    @patch("ivory_tower.strategies.council._run_agent", side_effect=_fake_run_agent)
+    def test_run_writes_reports_from_agent_output(self, mock_run, mock_exec, mock_sandbox, tmp_path):
+        """Agent reports are written from AgentOutput.raw_output, not filesystem scraping."""
+        s = CouncilStrategy()
+        config = RunConfig(
+            topic="test", agents=["a", "b"], synthesizer="a",
+            output_dir=tmp_path
+        )
+        manifest = s.create_manifest(config, "run-123")
+
+        run_dir = tmp_path / "run-123"
+        for d in ("phase1", "phase2", "phase3"):
+            (run_dir / d).mkdir(parents=True, exist_ok=True)
+
+        s.run(run_dir, config, manifest)
+
+        # Phase 1 reports should contain agent output text
+        assert (run_dir / "phase1" / "a-report.md").read_text() == "Report by a"
+        assert (run_dir / "phase1" / "b-report.md").read_text() == "Report by b"
+
+        # Phase 3 final report should exist
+        assert (run_dir / "phase3" / "final-report.md").exists()
+
+    @patch("ivory_tower.strategies.council._create_sandbox", side_effect=_fake_create_sandbox)
+    @patch("ivory_tower.strategies.council._get_executor", side_effect=_fake_get_executor)
+    @patch("ivory_tower.strategies.council._run_agent", side_effect=_fake_run_agent)
+    def test_run_agent_called_for_each_agent_and_phase(self, mock_run, mock_exec, mock_sandbox, tmp_path):
+        """_run_agent is called for each agent in each phase."""
+        s = CouncilStrategy()
+        config = RunConfig(
+            topic="test", agents=["a", "b"], synthesizer="a",
+            output_dir=tmp_path
+        )
+        manifest = s.create_manifest(config, "run-123")
+
+        run_dir = tmp_path / "run-123"
+        for d in ("phase1", "phase2", "phase3"):
+            (run_dir / d).mkdir(parents=True, exist_ok=True)
+
+        s.run(run_dir, config, manifest)
+
+        # Phase 1: 2 agents, Phase 2: 2 refinements, Phase 3: 1 synthesis
+        assert mock_run.call_count == 5
+
 
 class TestCouncilResume:
     """Tests for CouncilStrategy.resume()."""
 
-    @patch("ivory_tower.strategies.council.run_counselors")
-    def test_resume_skips_completed_phases(self, mock_counselors, tmp_path):
+    @patch("ivory_tower.strategies.council._create_sandbox", side_effect=_fake_create_sandbox)
+    @patch("ivory_tower.strategies.council._get_executor", side_effect=_fake_get_executor)
+    @patch("ivory_tower.strategies.council._run_agent", side_effect=_fake_run_agent)
+    def test_resume_skips_completed_phases(self, mock_run, mock_exec, mock_sandbox, tmp_path):
         s = CouncilStrategy()
         config = RunConfig(
             topic="test", agents=["a", "b"], synthesizer="a",
@@ -237,18 +296,11 @@ class TestCouncilResume:
         # Write needed files for synthesis
         (run_dir / "phase2" / "a-cross-b.md").write_text("cross report")
 
-        def fake_counselors(prompt_file, agents, output_dir, verbose=False):
-            for agent in agents:
-                (output_dir / f"{agent}.md").write_text(f"Report by {agent}")
-            return MagicMock(returncode=0)
-
-        mock_counselors.side_effect = fake_counselors
-
         result = s.resume(run_dir, config, manifest)
         assert result.phases["synthesis"].status == PhaseStatus.COMPLETE
 
         # Should only have been called once (for synthesis only)
-        assert mock_counselors.call_count == 1
+        assert mock_run.call_count == 1
 
 
 class TestCouncilDryRun:

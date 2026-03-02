@@ -114,6 +114,14 @@ class TestParseEvaluationJson:
 # ---------------------------------------------------------------------------
 
 
+try:
+    import litellm  # noqa: F401
+    _has_litellm = True
+except ImportError:
+    _has_litellm = False
+
+
+@pytest.mark.skipif(not _has_litellm, reason="litellm not installed")
 class TestLlmCompletion:
     """Test the litellm wrapper function."""
 

@@ -2,7 +2,7 @@
 
 Multi-agent deep research from the terminal.
 
-Orchestrates [counselors](https://github.com/anomalyco/counselors) agents (or direct LLM calls via litellm) to research a topic in parallel, challenge each other's work, and synthesize a final report.
+Orchestrates AI coding agents via [ACP](https://agentclientprotocol.com) (Agent Client Protocol) to research a topic in parallel, challenge each other's work, and synthesize a final report. Also supports headless CLI agents and legacy [counselors](https://github.com/anomalyco/counselors) as fallback.
 
 Five strategies. **Council** and **adversarial** are battle-tested. **Debate**, **map-reduce**, and **red-blue** are implemented via the YAML template engine but not yet live-tested.
 
@@ -70,44 +70,86 @@ graph TD
 ### Installation
 
 ```bash
-# requires: python 3.12+, uv, counselors
+# requires: python 3.12+, uv
 uv tool install ivory-tower
 
 # with adversarial strategy support (GEPA)
 uv tool install "ivory-tower[adversarial]"
 
-# with direct executor support (litellm)
+# with direct LLM executor (litellm) for adversarial evaluation
 uv tool install "ivory-tower[direct]"
+
+# everything
+uv tool install "ivory-tower[all]"
 ```
+
+### Agent Setup
+
+Create YAML configs in `~/.ivory-tower/agents/`, one per agent. Agent names must match the filename.
+
+```yaml
+# ~/.ivory-tower/agents/opencode-haiku.yml
+name: opencode-haiku
+command: opencode           # binary on PATH
+args: ["acp"]               # starts OpenCode in ACP mode
+protocol: acp               # ACP over stdio (Tier 1)
+env:
+  OPENCODE_CONFIG_CONTENT: '{"model": "wibey/claude-haiku-4-5-20251001"}'
+```
+
+```yaml
+# ~/.ivory-tower/agents/opencode-gpt.yml
+name: opencode-gpt
+command: opencode
+args: ["acp"]
+protocol: acp
+env:
+  OPENCODE_CONFIG_CONTENT: '{"model": "openai/gpt-5.3-codex-spark"}'
+```
+
+```yaml
+# ~/.ivory-tower/agents/codex-headless.yml
+name: codex-headless
+command: codex
+args: ["-m", "gpt-5.3-codex", "--quiet"]
+protocol: headless           # non-ACP CLI (Tier 2)
+output_format: text
+```
+
+Verify: `ivory agents`
 
 ### Quick start
 
 ```bash
-# council (default) -- 3 agents research, cross-review, then synthesize
+# council (default) -- 2 agents research, cross-review, synthesize
 ivory research "state of WebAssembly in 2026" \
-  -a claude-opus,codex-5.3-xhigh,amp-deep \
-  -s claude-opus
+  -a opencode-haiku,opencode-gpt \
+  -s opencode-haiku
 
-# adversarial -- 2 agents produce seed reports, iteratively optimize via GEPA judging
-ivory research "state of WebAssembly in 2026" \
+# with local sandboxing (each agent gets isolated workspace)
+ivory research "topic" \
+  -a opencode-haiku,opencode-gpt \
+  -s opencode-haiku \
+  --sandbox local -v
+
+# adversarial -- iterative optimization scored by opposing agent via GEPA
+ivory research "topic" \
   --strategy adversarial \
-  -a claude-opus,codex-5.3-xhigh \
-  -s claude-opus \
+  -a opencode-haiku,opencode-gpt \
+  -s opencode-haiku \
   --max-rounds 5
 
-# adversarial direct executor -- labels for agent roles + one explicit model
-ivory research "state of WebAssembly in 2026" \
+# adversarial with direct LLM executor (100% JSON parse reliability, no agent runtime)
+ivory research "topic" \
   --strategy adversarial \
-  --executor direct \
-  --model openai/claude-haiku-4-5 \
-  --api-base http://127.0.0.1:8112/v1 \
-  -a direct-a,direct-b \
-  -s direct-synth \
-  --max-rounds 5
+  --executor direct --model openai/claude-haiku-4-5 \
+  -a agent-a,agent-b -s agent-a
 
-# read topic from file, pipe from stdin
-ivory research -f topic.md -a claude-opus,codex-5.3-xhigh -s claude-opus
-cat topic.md | ivory research -a claude-opus,codex-5.3-xhigh -s claude-opus
+# read topic from file
+ivory research -f topic.md -a opencode-haiku,opencode-gpt -s opencode-haiku
+
+# stream live agent output
+ivory research "topic" -a opencode-haiku,opencode-gpt -s opencode-haiku --stream
 ```
 
 ### Strategies
@@ -115,7 +157,7 @@ cat topic.md | ivory research -a claude-opus,codex-5.3-xhigh -s claude-opus
 | Strategy | Agents | Status | Description |
 |----------|--------|--------|-------------|
 | **council** | 2+ | stable | Independent research, skeptical cross-review, synthesis |
-| **adversarial** | 2 | stable | Iterative optimization scored by opposing agent via [GEPA](https://github.com/anomalyco/gepa) |
+| **adversarial** | 2 | stable | Iterative optimization scored by opposing agent via [GEPA](https://github.com/anomalyco/gepa). Supports `--executor direct` for 100% JSON parse reliability via litellm. |
 | **debate** | 2-6 | alpha | Turn-based argumentation with shared blackboard transcript |
 | **map-reduce** | 2-20 | alpha | Decompose topic into subtopics, one agent per subtopic, merge |
 | **red-blue** | 3-10 | alpha | Red team critiques, blue team defends, synthesizer reconciles |
@@ -131,6 +173,9 @@ ivory research TOPIC [OPTIONS]    Run a research pipeline
 ivory resume   RUN_DIR            Resume a partially-completed run
 ivory status   RUN_DIR            Print status summary
 ivory list                        List all runs in output directory
+ivory agents                      List configured agents (from ~/.ivory-tower/agents/)
+ivory agents check NAME           Verify agent binary resolves and ACP handshake works
+ivory migrate                     Show migration status from counselors to ACP
 ivory strategies                  List available strategies
 ivory templates                   List strategy templates
 ivory profiles                    List agent profiles
@@ -150,24 +195,25 @@ ivory audit    RUN_DIR [AGENT]    Query sandbox audit trail
 | `--raw` | | Send topic as-is with no prompt wrapping |
 | `--output-dir` | `-o` | Override output directory (default: `./research`) |
 | `--max-rounds` | | Max GEPA optimization rounds (adversarial, default: 10) |
-| `--executor` | | Execution backend: `counselors` (default) or `direct` |
-| `--model` | | LLM model for direct executor (required with `--executor direct`) |
-| `--api-base` | | Optional API base URL for direct executor |
 | `--rounds` | | Number of rounds for iterative phases |
 | `--sandbox` | | Sandbox backend: `none`, `local`, `agentfs`, `daytona` |
 | `--red-team` | | Agent specs for red team (red-blue strategy) |
 | `--blue-team` | | Agent specs for blue team (red-blue strategy) |
 | `--dry-run` | | Show the execution plan without running |
 | `--json` | | Print manifest JSON on completion |
+| `--stream` | | Stream live agent output to terminal (Rich Live panels) |
+| `--executor` | | Executor for adversarial GEPA loop: `counselors` (default) or `direct` (litellm) |
+| `--model` | | LLM model ID for direct executor (e.g., `openai/claude-haiku-4-5`) |
+| `--api-base` | | API base URL for direct executor |
+| `--parse-agent` | | Fallback agent for structured-output extraction when judge JSON parsing fails |
 | `--verbose` | `-v` | Rich logging with animated spinners and debug output |
 
 ### Agent profiles
 
-Reusable agent identities stored as YAML in `~/.ivory-tower/profiles/`:
+Reusable agent identities stored as YAML in `~/.ivory-tower/profiles/`. Profiles are distinct from agent configs -- they define persona/system prompt overlays, not execution binaries.
 
 ```yaml
 # ~/.ivory-tower/profiles/deep-researcher.yml
-model: claude-opus
 role: researcher
 system_prompt: "You are a thorough researcher..."
 ```
@@ -175,7 +221,7 @@ system_prompt: "You are a thorough researcher..."
 Reference profiles on the CLI with `@name`:
 
 ```bash
-ivory research "topic" -a @deep-researcher,@fast-scanner -s claude-opus
+ivory research "topic" -a @deep-researcher,@fast-scanner -s opencode-haiku
 ```
 
 ```bash
@@ -184,9 +230,9 @@ ivory profiles           # list all profiles
 
 ### Sandboxing
 
-Agent isolation for template-based strategies (debate, map-reduce, red-blue). Each agent runs in its own sandbox; shared state flows through orchestrator-mediated blackboards -- agents never write to shared volumes directly.
+Each agent runs in its own sandbox; shared state flows through orchestrator-mediated blackboards -- agents never write to shared volumes directly. All strategies (council, adversarial, template-based) support `--sandbox`.
 
-> Council and adversarial use direct filesystem paths and currently ignore `--sandbox`.
+For ACP agents, `SandboxACPClient` intercepts `readTextFile`/`writeTextFile`/`createTerminal` calls and routes them through the sandbox with path traversal prevention and isolation mode enforcement. For headless agents, isolation depends on the sandbox backend's OS-level enforcement.
 
 #### Backends
 
@@ -231,22 +277,23 @@ Flow per round: orchestrator reads blackboard, writes snapshot into each sandbox
 ```bash
 # debate -- turn-based argumentation with shared blackboard transcript
 ivory research "topic" --template debate \
-  -a claude-opus,codex-5.3-xhigh,gemini-deep -s claude-opus \
+  -a opencode-haiku,opencode-gpt,opencode-wibey-opus -s opencode-wibey-opus \
   --sandbox local --rounds 5
 
 # map-reduce -- decompose, research subtopics in parallel, merge
 ivory research "topic" --template map-reduce \
-  -a claude-opus,codex-5.3-xhigh,gemini-deep,amp-deep -s claude-opus \
+  -a opencode-haiku,opencode-gpt,opencode-wibey-opus -s opencode-wibey-opus \
   --sandbox agentfs
 
 # red-blue -- adversarial team debate with cross-team isolation
 ivory research "topic" --template red-blue \
-  -a claude-opus,codex-5.3-xhigh,gemini-deep,amp-deep -s claude-opus \
-  --red-team claude-opus,codex-5.3-xhigh --blue-team gemini-deep,amp-deep \
+  -a opencode-haiku,opencode-gpt,opencode-wibey-opus,opencode-gpt-codex \
+  -s opencode-wibey-opus \
+  --red-team opencode-haiku,opencode-gpt --blue-team opencode-wibey-opus,opencode-gpt-codex \
   --sandbox daytona
 
 # query the sandbox audit trail (agentfs only)
-ivory audit research/20260301-143000-a1b2c3/ claude-opus
+ivory audit research/20260301-143000-a1b2c3/ opencode-haiku
 ```
 
 YAML templates can declare sandbox defaults that `--sandbox` overrides:
@@ -271,6 +318,9 @@ Each run produces a self-contained directory:
     phase1/                # initial research / seed reports
     phase2/                # cross-review / optimization artifacts
     phase3/final-report.md # synthesized report
+    sandboxes/             # per-agent isolated workspaces (with --sandbox local/agentfs/daytona)
+      agent-a/workspace/   #   audit copies of agent file operations
+      agent-b/workspace/
 ```
 
 ### Logging
@@ -306,7 +356,6 @@ Every strategy follows the same visual pattern:
 [HH:MM:SS] INFO    ▸ Agents: agent-a, agent-b
               ▸ Agents researching: agent-a, agent-b     # animated spinner
               ✔ Agents researching: agent-a, agent-b (45.2s)
-[HH:MM:SS] INFO    ▸ Counselors session complete, normalizing output
 [HH:MM:SS] INFO  ✔ Phase 1 complete (45.2s)             # phase footer
 
 [HH:MM:SS] INFO  ▶ Phase 2 -- Cross-Pollination
@@ -329,7 +378,7 @@ Every strategy follows the same visual pattern:
 
 | Strategy | Pipeline Header | Phase Headers | Step Detail | Spinners/Progress | Phase Footers | Pipeline Footer |
 |----------|----------------|---------------|-------------|-------------------|---------------|-----------------|
-| **council** | `run()` | Each `_run_phase{1,2,3}` | Agent lists, normalization | `phase_spinner`, `create_agent_progress` | Duration per phase | Duration total |
+| **council** | `run()` | Each `_run_phase{1,2,3}` | Agent lists, ACP session info | `phase_spinner`, `create_agent_progress` | Duration per phase | Duration total |
 | **adversarial** | `_run_adversarial_optimization` | Each `_run_*` method | Per-round scores, feedback, optimization progress | `phase_spinner` per judge/improve/optimize | Duration per phase | Duration total |
 | **debate** | `run()` | `GenericTemplateExecutor` per phase | Agent lists, isolation mode, round counts | `phase_spinner` per agent turn | Duration per phase | Duration total |
 | **map-reduce** | `run()` | `GenericTemplateExecutor` per phase | Agent lists, isolation mode, concurrency | `phase_spinner` for single-agent phases | Duration per phase | Duration total |
@@ -375,10 +424,11 @@ Rich markup tags used in log messages:
 
 - Python 3.12+
 - [uv](https://github.com/astral-sh/uv)
-- [counselors](https://github.com/anomalyco/counselors) installed and configured with at least 2 agents (when using `--executor counselors`)
-- [gepa](https://github.com/anomalyco/gepa) for the adversarial strategy (`uv tool install "ivory-tower[adversarial]"`)
-- [litellm](https://github.com/BerriAI/litellm) for direct executor mode (`uv tool install "ivory-tower[direct]"`)
+- At least 2 ACP-compatible agents on PATH (e.g., [OpenCode](https://github.com/anomalyco/opencode) with `opencode acp`)
+- Agent configs in `~/.ivory-tower/agents/` (see Agent Setup above)
+- Optional: [gepa](https://github.com/anomalyco/gepa) for adversarial strategy (`uv tool install "ivory-tower[adversarial]"`)
+- Optional: [counselors](https://github.com/anomalyco/counselors) for legacy executor fallback
 
 ### Inspired by
 
-[hamelsmu/research-council](https://github.com/hamelsmu/research-council) · [counselors](https://github.com/anomalyco/counselors) · [GEPA](https://github.com/anomalyco/gepa) · [clig.dev](https://clig.dev/)
+[hamelsmu/research-council](https://github.com/hamelsmu/research-council) · [ACP](https://agentclientprotocol.com) · [counselors](https://github.com/anomalyco/counselors) · [GEPA](https://github.com/anomalyco/gepa) · [clig.dev](https://clig.dev/)

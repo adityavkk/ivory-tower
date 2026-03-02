@@ -138,19 +138,12 @@ support.
 **Priority**: medium
 **Affects**: council, adversarial strategies
 **File**: `src/ivory_tower/strategies/council.py`, `src/ivory_tower/strategies/adversarial.py`
+**Status**: Resolved (ACP integration).
 
-Both strategies call `run_counselors()` directly with filesystem paths and
-never reference `config.sandbox_backend`. Passing `--sandbox local` (or any
-backend) is silently ignored. The CLI validates the backend but the strategies
-don't use it.
-
-The sandbox spec (03-SANDBOX-SPEC.md) calls for these strategies to be
-refactored to use the sandbox system, but this work was never done.
-
-**Fix options**:
-a. Refactor council/adversarial to use `GenericTemplateExecutor` (large change, may break GEPA integration for adversarial)
-b. Wire sandbox providers directly into the strategy code without the template executor
-c. Document as unsupported and warn at CLI level when `--sandbox` is used with council/adversarial
+Both strategies now use `AgentExecutor.run()` via `_get_executor()` /
+`_create_sandbox()` / `_run_agent()` helpers. Sandboxes are created per-agent
+using `config.sandbox_backend` and passed to executors. The `run_counselors()`
+calls no longer exist in strategies. Option (b) was implemented.
 
 ### Issue 5: `resume_pipeline()` doesn't preserve `sandbox_backend`
 

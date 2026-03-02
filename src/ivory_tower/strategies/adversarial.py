@@ -14,7 +14,8 @@ from typing import Any, Mapping, Sequence
 
 logger = logging.getLogger(__name__)
 
-from ivory_tower.counselors import run_counselors
+from ivory_tower.executor import get_executor, get_executor_for_agent
+from ivory_tower.executor.types import AgentExecutor, AgentOutput
 from ivory_tower.models import (
     AdversarialOptimizationPhase,
     AgentResult,
@@ -46,117 +47,61 @@ from ivory_tower.prompts import (
     build_research_prompt,
 )
 from ivory_tower.strategies.judge_scoring import normalize_judge_evaluation
+from ivory_tower.sandbox import get_provider
+from ivory_tower.sandbox.types import Sandbox, SandboxConfig
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _normalize_counselors_output(
-    output_dir: Path, agents: list[str], suffix: str = "-report.md"
-) -> None:
-    """Copy agent outputs from counselors slug subdirectory to expected paths.
-
-    Searches ALL slug subdirectories (not just the most recent) for each
-    agent's output file using progressively looser matching:
-
-    1. Exact ``{agent}.md``
-    2. ``report.md`` fallback (single-agent case)
-    3. Substring match: any ``.md`` file whose stem contains the agent name
-    4. Sole ``.md`` file in the slug dir (single-agent case)
-    """
-    slug_dirs = sorted(
-        (d for d in output_dir.iterdir() if d.is_dir()),
-        key=lambda d: d.stat().st_mtime,
-        reverse=True,
-    )
-    if not slug_dirs:
-        return
-
-    for agent in agents:
-        dst = output_dir / f"{agent}{suffix}"
-        if dst.exists():
-            continue
-
-        src: Path | None = None
-
-        for slug_dir in slug_dirs:
-            # 1. Exact match
-            candidate = slug_dir / f"{agent}.md"
-            if candidate.exists():
-                src = candidate
-                break
-
-            # 2. report.md fallback (any number of agents)
-            fallback = slug_dir / "report.md"
-            if fallback.exists():
-                src = fallback
-                break
-
-            # 3. Substring match: filename stem contains the agent name
-            md_files = list(slug_dir.glob("*.md"))
-            for md in md_files:
-                if agent in md.stem:
-                    src = md
-                    break
-            if src is not None:
-                break
-
-            # 4. Sole .md file when there's only one unmatched agent
-            if len(agents) == 1 and len(md_files) == 1:
-                src = md_files[0]
-                break
-
-        if src is not None:
-            src = _find_best_report_file(src.parent, src)
-            shutil.copy2(src, dst)
-            logger.debug("Normalized %s -> %s", src, dst)
-        else:
-            logger.warning(
-                "Could not find output for agent %s in %s", agent, output_dir
-            )
-
-
-def _find_best_report_file(slug_dir: Path, initial_file: Path) -> Path:
-    """Pick the best report file from a counselors slug directory.
-
-    If another .md file in *slug_dir* is substantially larger (>2x) than
-    *initial_file*, assume it is the real report (agents often write their
-    actual output to a separate file like ``research_report.md``).
-
-    Files excluded from consideration: ``prompt.md``, ``summary.md``.
-    """
-    EXCLUDED = {"prompt.md", "summary.md"}
+def _get_executor(agent_name: str) -> AgentExecutor:
+    """Get the executor for an agent, falling back to counselors if no config."""
     try:
-        initial_size = initial_file.stat().st_size
-    except OSError:
-        return initial_file
-
-    best = initial_file
-    best_size = initial_size
-
-    for md in slug_dir.glob("*.md"):
-        if md.name in EXCLUDED:
-            continue
-        if md == initial_file:
-            continue
-        try:
-            sz = md.stat().st_size
-        except OSError:
-            continue
-        if sz > best_size:
-            best = md
-            best_size = sz
-
-    # Only switch if the better candidate is substantially larger (>2x)
-    if best != initial_file and best_size > initial_size * 2:
+        return get_executor_for_agent(agent_name)
+    except FileNotFoundError:
         logger.debug(
-            "Best-file heuristic: %s (%d bytes) -> %s (%d bytes)",
-            initial_file.name, initial_size, best.name, best_size,
+            "No agent config for '%s', falling back to counselors executor",
+            agent_name,
         )
-        return best
+        return get_executor("counselors")
 
-    return initial_file
+
+def _create_sandbox(
+    run_dir: Path, agent_name: str, run_id: str, backend: str = "none",
+) -> Sandbox:
+    """Create a sandbox for an agent in the given run directory."""
+    provider = get_provider(backend)
+    config = SandboxConfig(backend=backend)
+    return provider.create_sandbox(
+        agent_name=agent_name,
+        run_id=run_id,
+        run_dir=run_dir,
+        config=config,
+    )
+
+
+def _run_agent(
+    executor: AgentExecutor,
+    sandbox: Sandbox,
+    agent_name: str,
+    prompt: str,
+    output_dir: str,
+    verbose: bool = False,
+    **kwargs: Any,
+) -> AgentOutput:
+    """Run an agent through the executor and return its output.
+
+    Extra kwargs (e.g. session_id, on_chunk) are forwarded to the executor.
+    """
+    return executor.run(
+        sandbox=sandbox,
+        agent_name=agent_name,
+        prompt=prompt,
+        output_dir=output_dir,
+        verbose=verbose,
+        **kwargs,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -178,22 +123,14 @@ formatting. Return ONLY the JSON object.
 ## Required JSON Schema
 
 {{
-  "overall_grade": <one of A, A-, B+, B, B-, C+, C, C-, D, F>,
-  "dimension_grades": {{
-    "factual_accuracy": <grade>,
-    "depth_of_analysis": <grade>,
-    "source_quality": <grade>,
-    "coverage_breadth": <grade>,
-    "analytical_rigor": <grade>
-  }},
-  "dimensions": {{
-    "factual_accuracy": <float 1-10>,
-    "depth_of_analysis": <float 1-10>,
-    "source_quality": <float 1-10>,
-    "coverage_breadth": <float 1-10>,
-    "analytical_rigor": <float 1-10>
-  }},
   "overall_score": <float 1.0-10.0>,
+  "dimensions": {{
+    "factual_accuracy": <int 1-10>,
+    "depth_of_analysis": <int 1-10>,
+    "source_quality": <int 1-10>,
+    "coverage_breadth": <int 1-10>,
+    "analytical_rigor": <int 1-10>
+  }},
   "strengths": [<string>, ...],
   "weaknesses": [<string>, ...],
   "suggestions": [<string>, ...],
@@ -203,8 +140,6 @@ formatting. Return ONLY the JSON object.
 Rules:
 - If the text contains explicit scores, use those exact values.
 - If the text describes quality without explicit scores, infer reasonable scores from context.
-- Use this deterministic mapping for grades -> numeric scores:
-  A=9.5, A-=9.0, B+=8.5, B=8.0, B-=7.5, C+=7.0, C=6.5, C-=6.0, D=5.0, F=3.0
 - The "critique" field should be a 2-3 paragraph summary of the evaluation.
 - "strengths", "weaknesses", and "suggestions" should each contain 2-5 items.
 - Return ONLY valid JSON. No markdown fences, no prose, no explanation.
@@ -241,22 +176,20 @@ def _llm_extract_json(
     )
 
     try:
+        executor = _get_executor(parse_agent)
+        sandbox = _create_sandbox(output_dir, parse_agent, "parse", "none")
         with phase_spinner(f"Parse agent ({parse_agent}) extracting JSON"):
-            run_counselors(
-                prompt_file=prompt_file,
-                agents=[parse_agent],
-                output_dir=parse_dir,
-                verbose=verbose,
+            result = _run_agent(
+                executor, sandbox, parse_agent,
+                prompt_text, "parse-agent-fallback", verbose,
             )
     except Exception:
-        logger.warning("[parse-agent] counselors run failed for parse agent", exc_info=True)
+        logger.warning("[parse-agent] agent run failed for parse agent", exc_info=True)
         return None
 
-    # Read the parse agent's output
-    try:
-        result_text = read_counselors_output(parse_dir, parse_agent)
-    except FileNotFoundError:
-        logger.warning("[parse-agent] No output file found from parse agent")
+    result_text = result.raw_output
+    if not result_text:
+        logger.warning("[parse-agent] No output from parse agent")
         return None
 
     # Save for debugging
@@ -267,12 +200,10 @@ def _llm_extract_json(
     if extracted is not None:
         try:
             data = json.loads(extracted)
-            normalized = normalize_judge_evaluation(data) if isinstance(data, dict) else None
-            if normalized is not None:
-                score, _ = normalized
+            if isinstance(data, dict) and "overall_score" in data:
                 logger.info(
                     "[parse-agent] Successfully extracted JSON via %s: score=%.1f",
-                    parse_agent, score,
+                    parse_agent, float(data.get("overall_score", 0)),
                 )
                 return extracted
         except (json.JSONDecodeError, TypeError, ValueError):
@@ -294,7 +225,7 @@ def _extract_json_from_markdown(text: str) -> str | None:
     - Format A: Clean JSON on the full text (OpenAI agents)
     - Format B: JSON in a ```json fenced code block (Anthropic agents)
     - Format C: JSON in any ``` fenced code block
-    - Format D: Raw JSON object containing evaluator keys in the text
+    - Format D: Raw JSON object containing "overall_score" in the text
     """
     if not text or not text.strip():
         return None
@@ -352,14 +283,10 @@ def _extract_json_from_markdown(text: str) -> str | None:
             except (json.JSONDecodeError, ValueError):
                 continue
 
-    # Strategy 4: Find a raw JSON object containing likely evaluator keys.
-    logger.debug("Trying JSON extraction strategy 4: raw JSON with evaluator keys")
+    # Strategy 4: Find a raw JSON object containing "overall_score"
+    logger.debug("Trying JSON extraction strategy 4: raw JSON with overall_score")
     # Use a greedy match from { to the last } to handle nested objects
-    for match in re.finditer(
-        r'\{[^{}]*(?:"overall_score"|"overall_grade"|"dimension_grades"|"dimensions")[^{}]*(?:\{[^{}]*\}[^{}]*)*\}',
-        text,
-        re.DOTALL,
-    ):
+    for match in re.finditer(r'\{[^{}]*"overall_score"[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL):
         candidate = match.group(0).strip()
         try:
             json.loads(candidate)
@@ -607,49 +534,6 @@ def extract_feedback_from_reflective_dataset(
 
     logger.debug("[feedback] No usable entries found in reflective_dataset")
     return defaults
-
-
-def read_counselors_output(output_dir: Path, agent: str) -> str:
-    """Read agent's output text from a counselors output directory."""
-    slug_dirs = sorted(
-        (d for d in output_dir.iterdir() if d.is_dir()),
-        key=lambda d: d.stat().st_mtime,
-        reverse=True,
-    )
-    for slug_dir in slug_dirs:
-        candidate: Path | None = None
-        # 1. Exact match
-        agent_file = slug_dir / f"{agent}.md"
-        if agent_file.exists():
-            candidate = agent_file
-        if candidate is None:
-            # 2. Substring match: any .md whose stem contains the agent name
-            md_files = list(slug_dir.glob("*.md"))
-            for md in md_files:
-                if agent in md.stem:
-                    candidate = md
-                    break
-        if candidate is None:
-            # 3. Any .md file as last resort for this slug dir
-            md_files = list(slug_dir.glob("*.md"))
-            if md_files:
-                candidate = md_files[0]
-        if candidate is not None:
-            best = _find_best_report_file(slug_dir, candidate)
-            return best.read_text()
-
-    # Fallback: files directly in output_dir
-    agent_file = output_dir / f"{agent}.md"
-    if agent_file.exists():
-        return agent_file.read_text()
-    # Substring match in output_dir
-    md_files = list(output_dir.glob("*.md"))
-    for md in md_files:
-        if agent in md.stem:
-            return md.read_text()
-    if md_files:
-        return md_files[0].read_text()
-    raise FileNotFoundError(f"No output found for agent '{agent}' in {output_dir}")
 
 
 # ---------------------------------------------------------------------------
@@ -966,45 +850,28 @@ class AdversarialStrategy:
         phase1_dir = run_dir / "phase1"
         phase1_dir.mkdir(parents=True, exist_ok=True)
 
+        sandbox_backend = getattr(config, "sandbox_backend", "none")
+        run_id = manifest.run_id
+
         t0 = time.monotonic()
         agents_label = ", ".join(config.agents)
+        with phase_spinner(f"Agents researching: [agent]{agents_label}[/agent]"):
+            with ThreadPoolExecutor() as pool:
+                futures = {}
+                for agent in config.agents:
+                    executor = _get_executor(agent)
+                    sandbox = _create_sandbox(run_dir, agent, run_id, sandbox_backend)
+                    futures[pool.submit(
+                        _run_agent, executor, sandbox, agent,
+                        prompt_text, f"phase1/{agent}", config.verbose,
+                    )] = agent
 
-        if getattr(config, "executor", "counselors") == "direct":
-            # Direct LLM mode: call litellm for each agent
-            from ivory_tower.strategies.direct_llm import _llm_completion
-
-            def _generate_seed(agent: str) -> tuple[str, str]:
-                seed_text = _llm_completion(
-                    model=config.model,
-                    prompt=prompt_text,
-                    api_base=config.api_base,
-                    max_tokens=16384,
-                    temperature=0.4,
-                )
-                return agent, seed_text
-
-            with phase_spinner(f"[direct] Agents researching: [agent]{agents_label}[/agent]"):
-                with ThreadPoolExecutor(max_workers=max(1, len(config.agents))) as executor:
-                    futures = [executor.submit(_generate_seed, agent) for agent in config.agents]
-                    for future in as_completed(futures):
-                        agent, seed_text = future.result()
-                        seed_file = phase1_dir / f"{agent}-seed.md"
-                        seed_file.write_text(seed_text)
-                        logger.info(
-                            fmt_ok("[direct] %s seed: %d chars"),
-                            fmt_agent(agent), len(seed_text),
-                        )
-        else:
-            with phase_spinner(f"Agents researching: [agent]{agents_label}[/agent]"):
-                run_counselors(
-                    prompt_file=prompt_file,
-                    agents=config.agents,
-                    output_dir=phase1_dir,
-                    verbose=config.verbose,
-                )
-
-            # Normalize: <slug>/<agent>.md -> <agent>-seed.md
-            _normalize_counselors_output(phase1_dir, config.agents, suffix="-seed.md")
+                for future in as_completed(futures):
+                    agent = futures[future]
+                    result = future.result()
+                    # Write seed report from agent output
+                    seed_path = phase1_dir / f"{agent}-seed.md"
+                    seed_path.write_text(result.raw_output)
 
         elapsed = time.monotonic() - t0
         sg.status = PhaseStatus.COMPLETE
@@ -1198,14 +1065,22 @@ class AdversarialStrategy:
                 prompt_file = round_dir / "judge-prompt.md"
                 prompt_file.write_text(judge_prompt)
 
-                # Run judge
+                # Run judge via executor
+                judge_executor = _get_executor(judge)
+                judge_sandbox = _create_sandbox(
+                    run_dir, judge, manifest.run_id,
+                    getattr(config, "sandbox_backend", "none"),
+                )
                 with phase_spinner(f"{fmt_agent(judge)} judging {fmt_agent(agent)} (round {round_num})"):
-                    run_counselors(
-                        prompt_file=prompt_file,
-                        agents=[judge],
-                        output_dir=round_dir,
-                        verbose=config.verbose,
+                    judge_result = _run_agent(
+                        judge_executor, judge_sandbox, judge,
+                        judge_prompt, f"phase2/judging/round-{round_num:02d}-{judge}-judges-{agent}",
+                        config.verbose,
                     )
+
+                # Write judge output to disk for parse_judge_output() to read
+                judge_output_file = round_dir / f"{judge}.md"
+                judge_output_file.write_text(judge_result.raw_output)
 
                 # Parse output
                 score, asi = parse_judge_output(
@@ -1216,12 +1091,9 @@ class AdversarialStrategy:
 
                 # Save judge output as readable file
                 judge_md = judging_dir / f"round-{round_num:02d}-{judge}-judges-{agent}.md"
-                judge_text = None
-                try:
-                    judge_text = read_counselors_output(round_dir, judge)
+                judge_text = judge_result.raw_output
+                if judge_text:
                     judge_md.write_text(judge_text)
-                except FileNotFoundError:
-                    pass
 
                 # If ASI has an error key (JSON parsing failed), ensure the
                 # raw judge prose is stuffed into critique so the proposer
@@ -1375,18 +1247,20 @@ class AdversarialStrategy:
                 except Exception:
                     logger.debug("[%s] Failed to write round debug file", agent, exc_info=True)
 
+                improve_executor = _get_executor(agent)
+                improve_sandbox = _create_sandbox(
+                    run_dir, agent, manifest.run_id,
+                    getattr(config, "sandbox_backend", "none"),
+                )
                 with phase_spinner(f"{fmt_agent(agent)} improving report (round {seed_result.rounds_completed + 1})"):
-                    run_counselors(
-                        prompt_file=prompt_file,
-                        agents=[agent],
-                        output_dir=improve_dir,
-                        verbose=config.verbose,
+                    improve_result = _run_agent(
+                        improve_executor, improve_sandbox, agent,
+                        improvement_prompt,
+                        f"phase2/{agent}-improve-round-{seed_result.rounds_completed + 1:02d}",
+                        config.verbose,
                     )
 
-                try:
-                    improved_text = read_counselors_output(improve_dir, agent)
-                except FileNotFoundError:
-                    improved_text = candidate.get("report", "")
+                improved_text = improve_result.raw_output or candidate.get("report", "")
 
                 return {"report": improved_text}
 
@@ -1575,33 +1449,23 @@ class AdversarialStrategy:
         prompt_file = phase3_dir / "synthesis-prompt.md"
         prompt_file.write_text(prompt_text)
 
+        run_id = manifest.run_id
+        sandbox_backend = config.sandbox_backend if hasattr(config, "sandbox_backend") else "none"
+        executor = _get_executor(config.synthesizer)
+        sandbox = _create_sandbox(run_dir, config.synthesizer, run_id, sandbox_backend)
+
         t0 = time.monotonic()
-        if getattr(config, "executor", "counselors") == "direct":
-            from ivory_tower.strategies.direct_llm import _llm_completion
+        with phase_spinner(f"Synthesizer [agent]{config.synthesizer}[/agent] working..."):
+            result = _run_agent(
+                executor, sandbox, config.synthesizer,
+                prompt_text, "phase3", config.verbose,
+            )
 
-            with phase_spinner(f"[direct] Synthesizer working..."):
-                synth_text = _llm_completion(
-                    model=config.model,
-                    prompt=prompt_text,
-                    api_base=config.api_base,
-                    max_tokens=16384,
-                    temperature=0.3,
-                )
-            synth_out = phase3_dir / f"{config.synthesizer}.md"
-            synth_out.write_text(synth_text)
-        else:
-            with phase_spinner(f"Synthesizer [agent]{config.synthesizer}[/agent] working..."):
-                run_counselors(
-                    prompt_file=prompt_file,
-                    agents=[config.synthesizer],
-                    output_dir=phase3_dir,
-                    verbose=config.verbose,
-                )
-
-            _normalize_counselors_output(phase3_dir, [config.synthesizer], suffix=".md")
-            synth_out = phase3_dir / f"{config.synthesizer}.md"
+        # Write synthesizer output and final report
+        synth_out = phase3_dir / f"{config.synthesizer}.md"
+        synth_out.write_text(result.raw_output)
         final_report = phase3_dir / "final-report.md"
-        if synth_out.exists() and not final_report.exists():
+        if not final_report.exists():
             shutil.copy2(synth_out, final_report)
 
         elapsed = time.monotonic() - t0

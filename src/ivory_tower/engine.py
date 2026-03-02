@@ -37,6 +37,7 @@ class RunConfig:
     rounds: int | None = None
     red_team: list[str] | None = None
     blue_team: list[str] | None = None
+    stream: bool = False
     executor: str = "counselors"
     model: str | None = None
     api_base: str | None = None

@@ -8,9 +8,17 @@ Issues 1-6 and 8 were fixed in earlier commits on this branch. Score parsing now
 
 ## Remaining issues (ordered by impact)
 
+> **Note (post-ACP integration):** Issues 11, 14, and 15 are resolved by the
+> ACP migration. Strategies now use `AgentExecutor.run()` which returns
+> `AgentOutput.raw_output` -- the accumulated text from the agent's session,
+> not filesystem-scraped conversational output. No `_normalize_counselors_output()`
+> or `read_counselors_output()` calls remain in strategies. Issue 12 is resolved
+> by the gepa-fixes feedback history accumulation. Issue 16 is partially addressed
+> by `round-debug.json` in gepa-fixes.
+
 ### 11. Seed capture reads conversational output, not the actual report (CRITICAL)
 
-**Status:** Open.
+**Status:** Resolved (ACP integration). `AgentOutput.raw_output` captures the agent's accumulated response text directly.
 
 **Symptom:** Phase 1 seed files contain agent meta-commentary ("I'll create a comprehensive report...") or planning notes ("## Goal -- produce a report..."), NOT the actual research report. The Anthropic agent writes its real 20K report to `research_report.md` inside the counselors slug directory, but the orchestrator copies `{agent}.md` (3K conversational summary) as the seed.
 
@@ -41,7 +49,7 @@ This heuristic should be in `_normalize_counselors_output()` or a new helper. Ap
 
 ### 12. Feedback passthrough from GEPA reflective_dataset is broken (CRITICAL)
 
-**Status:** Open.
+**Status:** Resolved (gepa-fixes). Feedback history accumulation across rounds, `round-debug.json` captures full feedback, and `build_improvement_prompt()` now receives structured feedback with trajectory.
 
 **Symptom:** The improvement prompt (phase 2, proposer round) shows **example/template feedback** instead of actual judge feedback. From the live run:
 
@@ -79,7 +87,7 @@ The dimension values (7, 6, 5, 7, 6) and strings ("Comprehensive coverage...") i
 
 ### 13. `max_rounds` maps 1:1 to `max_metric_calls` but seed eval consumes a call
 
-**Status:** Open.
+**Status:** Resolved (gepa-fixes). `max_metric_calls` now set to `1 + max_rounds * 3` to account for seed eval and per-iteration cost.
 
 **Symptom:** `--max-rounds 2` sets `max_metric_calls=2` in GEPA config. But GEPA uses one metric call to evaluate the seed, leaving only 1 call for evaluating an improved candidate. The user expects 2 *improvement* rounds, not 1 seed eval + 1 improvement eval.
 
@@ -96,7 +104,7 @@ The dimension values (7, 6, 5, 7, 6) and strings ("Comprehensive coverage...") i
 
 ### 14. Improvement prompt sends conversational output as "Your Current Report"
 
-**Status:** Open. Direct consequence of issue 11.
+**Status:** Resolved (ACP integration). Direct consequence of issue 11 -- with ACP, `AgentOutput.raw_output` is the agent's actual response text.
 
 **Symptom:** The improvement prompt's "## Your Current Report" section contains the 3K conversational meta-commentary, not the 20K actual report. The improving agent is told to improve a summary it didn't write, not the real report.
 
@@ -118,7 +126,7 @@ This is the agent's conversational output, not a research report.
 
 ### 15. Proposer reads conversational output from improvement rounds too
 
-**Status:** Open. Same pattern as issue 11/14 but for improvement rounds.
+**Status:** Resolved (ACP integration). Same pattern as issue 11/14 -- with ACP, `_run_agent()` returns `AgentOutput.raw_output` directly, no filesystem scraping.
 
 **Symptom:** After `run_counselors()` in the proposer, `read_counselors_output()` returns `{agent}.md` from the slug dir. If the agent wrote its improved report to a separate file (e.g., `improved_research_report.md`), that file is ignored. The proposer returns the conversational output to GEPA as the "improved" candidate.
 
@@ -137,7 +145,7 @@ improved_research_report.md                                                  25,
 
 ### 16. Log the exact input to each GEPA improvement round
 
-**Status:** Open.
+**Status:** Partially resolved (gepa-fixes). `round-debug.json` now written per round with full feedback (strengths, weaknesses, suggestions). Verbose logging covers evaluator/proposer internals.
 
 **Symptom:** It's impossible to debug the optimization loop without seeing what GEPA passed to the proposer and evaluator at each round.
 

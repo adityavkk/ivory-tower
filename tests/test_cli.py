@@ -74,9 +74,8 @@ class TestHelp:
 
 class TestResearchErrors:
     @patch("ivory_tower.cli.sys")
-    @patch("ivory_tower.cli.resolve_counselors_cmd", return_value=["counselors"])
-    @patch("ivory_tower.cli.list_available_agents", return_value=AVAILABLE_AGENTS)
-    def test_research_no_topic_errors(self, mock_list, mock_resolve, mock_sys):
+    @patch("ivory_tower.cli.validate_agent_configs", return_value=[])
+    def test_research_no_topic_errors(self, mock_validate, mock_sys):
         """No positional, no --file, isatty=True -> exit 1."""
         mock_sys.stdin.isatty.return_value = True
         result = runner.invoke(app, [
@@ -103,6 +102,18 @@ class TestResearchErrors:
         ])
         assert result.exit_code != 0
 
+    @patch("ivory_tower.cli.validate_agent_configs", return_value=["bad-agent"])
+    def test_research_invalid_agent_config(self, mock_validate):
+        """Agent with no config -> error with helpful message."""
+        result = runner.invoke(app, [
+            "research", "some topic",
+            "--agents", "bad-agent",
+            "--synthesizer", "bad-agent",
+        ])
+        assert result.exit_code != 0
+        assert "bad-agent" in result.output
+        assert "no agent config" in result.output.lower()
+
 
 # ---------------------------------------------------------------------------
 # 3. Research command -- success paths
@@ -111,11 +122,9 @@ class TestResearchErrors:
 
 class TestResearchSuccess:
     @patch("ivory_tower.cli.run_pipeline")
-    @patch("ivory_tower.cli.validate_agents", return_value=[])
-    @patch("ivory_tower.cli.list_available_agents", return_value=AVAILABLE_AGENTS)
-    @patch("ivory_tower.cli.resolve_counselors_cmd", return_value=["counselors"])
+    @patch("ivory_tower.cli.validate_agent_configs", return_value=[])
     def test_research_from_file(
-        self, mock_resolve, mock_list, mock_validate, mock_pipeline, tmp_path
+        self, mock_validate, mock_pipeline, tmp_path
     ):
         """Topic loaded from --file."""
         topic_file = tmp_path / "topic.txt"
@@ -140,11 +149,9 @@ class TestResearchSuccess:
 
     @patch("ivory_tower.cli.print_dry_run")
     @patch("ivory_tower.cli.run_pipeline")
-    @patch("ivory_tower.cli.validate_agents", return_value=[])
-    @patch("ivory_tower.cli.list_available_agents", return_value=AVAILABLE_AGENTS)
-    @patch("ivory_tower.cli.resolve_counselors_cmd", return_value=["counselors"])
+    @patch("ivory_tower.cli.validate_agent_configs", return_value=[])
     def test_research_dry_run(
-        self, mock_resolve, mock_list, mock_validate, mock_pipeline, mock_dry_run
+        self, mock_validate, mock_pipeline, mock_dry_run
     ):
         """--dry-run calls print_dry_run, not run_pipeline."""
         result = runner.invoke(app, [
@@ -156,6 +163,28 @@ class TestResearchSuccess:
         assert result.exit_code == 0
         mock_dry_run.assert_called_once()
         mock_pipeline.assert_not_called()
+
+    @patch("ivory_tower.cli.run_pipeline")
+    @patch("ivory_tower.cli.validate_agent_configs", return_value=[])
+    def test_research_stream_flag(
+        self, mock_validate, mock_pipeline, tmp_path
+    ):
+        """--stream sets config.stream=True."""
+        run_dir = tmp_path / "research" / "run-123"
+        run_dir.mkdir(parents=True)
+        (run_dir / "phase3" / "final-report.md").parent.mkdir(parents=True)
+        (run_dir / "phase3" / "final-report.md").write_text("report")
+        mock_pipeline.return_value = run_dir
+
+        result = runner.invoke(app, [
+            "research", "some topic",
+            "--agents", "claude-opus",
+            "--synthesizer", "claude-opus",
+            "--stream",
+        ])
+        assert result.exit_code == 0
+        config = mock_pipeline.call_args[0][0]
+        assert config.stream is True
 
 
 # ---------------------------------------------------------------------------
@@ -225,3 +254,49 @@ class TestList:
         assert result.exit_code == 0
         assert "aaaaaa" in result.output
         assert "bbbbbb" in result.output
+
+
+# ---------------------------------------------------------------------------
+# 7. Migrate command
+# ---------------------------------------------------------------------------
+
+
+class TestMigrate:
+    @patch("ivory_tower.agents.AGENTS_DIR")
+    @patch("ivory_tower.agents.load_agents", return_value={})
+    @patch("ivory_tower.counselors.resolve_counselors_cmd", return_value=["counselors"])
+    @patch("ivory_tower.counselors.list_available_agents", return_value=["agent-a", "agent-b"])
+    def test_migrate_creates_configs(
+        self, mock_list, mock_resolve, mock_load, mock_dir, tmp_path,
+    ):
+        """migrate creates YAML configs for counselors agents."""
+        # Redirect AGENTS_DIR to tmp_path
+        mock_dir.__fspath__ = lambda self: str(tmp_path)
+        mock_dir.__truediv__ = lambda self, name: tmp_path / name
+        mock_dir.mkdir = MagicMock()
+
+        result = runner.invoke(app, ["migrate"])
+        assert result.exit_code == 0
+        assert "2" in result.output  # "Migrated 2 agent(s)"
+        assert (tmp_path / "agent-a.yml").exists()
+        assert (tmp_path / "agent-b.yml").exists()
+
+    @patch("ivory_tower.agents.AGENTS_DIR")
+    @patch("ivory_tower.agents.load_agents", return_value={"agent-a": MagicMock()})
+    @patch("ivory_tower.counselors.resolve_counselors_cmd", return_value=["counselors"])
+    @patch("ivory_tower.counselors.list_available_agents", return_value=["agent-a", "agent-b"])
+    def test_migrate_skips_existing(
+        self, mock_list, mock_resolve, mock_load, mock_dir, tmp_path,
+    ):
+        """migrate skips agents that already have configs."""
+        mock_dir.__fspath__ = lambda self: str(tmp_path)
+        mock_dir.__truediv__ = lambda self, name: tmp_path / name
+        mock_dir.mkdir = MagicMock()
+
+        result = runner.invoke(app, ["migrate"])
+        assert result.exit_code == 0
+        assert "skip" in result.output.lower()
+        assert "1" in result.output  # "Migrated 1 agent(s)"
+        # Only agent-b should be created
+        assert not (tmp_path / "agent-a.yml").exists()
+        assert (tmp_path / "agent-b.yml").exists()

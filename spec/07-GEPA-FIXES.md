@@ -164,7 +164,7 @@ A `custom_candidate_proposer` that:
 3. Builds an **evolving** improvement prompt via `build_improvement_prompt()`
    with `feedback_history` from prior rounds (line ~1217)
 4. Appends current feedback to `feedback_history` for future rounds (line ~1221)
-5. Dispatches the original authoring agent via `counselors run`
+5. Dispatches the original authoring agent via `AgentExecutor.run()`
 6. Returns `{"report": improved_text}`
 
 ### optimize_anything call (line ~1286)
@@ -372,9 +372,9 @@ extractions succeeded, recovering scores of 7.2 and 2.0 that would have been
 ## DON'T
 
 - Rip out the custom_candidate_proposer. Ivory-tower's agent-dispatch model
-  (counselors run) is fundamental. The question is how to feed GEPA's
-  structured feedback into that dispatch, not whether to replace it with
-  GEPA's internal LLM.
+  (`AgentExecutor.run()`, routed per-agent via YAML config protocol field) is
+  fundamental. The question is how to feed GEPA's structured feedback into
+  that dispatch, not whether to replace it with GEPA's internal LLM.
 
 - Assume GEPA's internals are stable. The `gepa` package is third-party and
   WIP. Any deeper integration should be defensive and tested against actual
@@ -432,7 +432,8 @@ extractions succeeded, recovering scores of 7.2 and 2.0 that would have been
   `asi["scores"]` enables multi-objective Pareto, `custom_candidate_proposer`
   receives `(candidate, reflective_dataset, components_to_update)`.
 - GEPA's accept/reject logic is correct (greedy hill-climbing on subsample).
-- The counselors CLI continues to work as the agent dispatch mechanism.
+- The `AgentExecutor` protocol (ACP, headless, counselors legacy, or direct)
+  handles agent dispatch. Per-agent routing via YAML config protocol field.
 - The `--parse-agent` fallback handles JSON extraction failures.
 
 ---
