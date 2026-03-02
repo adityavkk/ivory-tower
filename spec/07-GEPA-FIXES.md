@@ -404,9 +404,12 @@ extractions succeeded, recovering scores of 7.2 and 2.0 that would have been
       624 tests pass as of v2.
 - [x] The evaluator's ASI includes a `"scores"` dict that GEPA recognizes.
       `TestEvaluatorParetoScores::test_evaluator_asi_contains_scores_key`
-- [ ] A live adversarial run with `--max-rounds 3` shows dimension-level score
+- [x] A live adversarial run with `--max-rounds 3` shows dimension-level score
       movement (not just aggregate) in the optimization log.
-      (Requires live run verification.)
+      Run `20260302-083944-8642c7`: both agents show 4 rounds of per-dimension
+      scores in `dimension_history`. Anthropic: 7.6 -> 6.8 -> 7.4 -> 3.8 with
+      dimension-level breakdowns. OpenAI: 8.4 -> 8.1 -> 7.8 -> 7.4.
+      Live tests: `TestAdversarialLiveE2E` (25 pass, 1 skip).
 - [x] The improvement prompt for round N references feedback from round N-1
       specifically, not a generic dump of all feedback.
       `TestProposerFeedbackHistory::test_improvement_prompt_contains_score_trajectory`
@@ -442,10 +445,11 @@ extractions succeeded, recovering scores of 7.2 and 2.0 that would have been
 | `tests/test_prompts.py` | `TestBuildImprovementPromptEvolution` (5 tests: trajectory, weakest dimension, failure mode, no-history, backward compat) |
 | `tests/test_models.py` | `TestSeedOptimizationResult::test_dimension_history_*` (2 tests) |
 | `tests/test_integration.py` | Fake `EngineConfig` updated with `frontier_type` field |
+| `tests/test_live_e2e.py` | `TestAdversarialLiveE2E` (27 tests: 15 structural + 10 GEPA feature verification + 2 skippable) |
 
-## Implementation Summary (v2)
+## Implementation Summary (v3)
 
-Branch: `gepa-fixes` (6 commits)
+Branch: `gepa-fixes` (10 commits)
 
 | Commit | Gap | Description |
 |--------|-----|-------------|
@@ -455,29 +459,66 @@ Branch: `gepa-fixes` (6 commits)
 | `4f57b0b` | 3 | Validate reflective_dataset works with new ASI scores format |
 | `d50fa02` | -- | Track per-dimension score history in `SeedOptimizationResult` |
 | `67ae6c4` | 1 | Set `frontier_type="objective"` on GEPAConfig |
+| `789b3d9` | -- | Live GEPA feature tests + `dimension_history` in optimization log |
+| `17bd228` | -- | Bump live test to `max_rounds=3` for trajectory verification |
+| `ed399f6` | -- | Fix judging dir glob to filter directories only |
 
-### What changed (616 lines added, 5 removed)
+### What changed
 
-**`adversarial.py`** (+37 lines): ASI `"scores"` injection after
-`parse_judge_output`; `dimension_history` appended per round; `feedback_history`
-list accumulated in proposer closure and passed to `build_improvement_prompt`;
+**`adversarial.py`**: ASI `"scores"` injection after `parse_judge_output`;
+`dimension_history` appended per round; `feedback_history` list accumulated
+in proposer closure and passed to `build_improvement_prompt`;
 `frontier_type="objective"` in `EngineConfig`; serialization of
-`dimension_history` in `phases_to_dict`/`phases_from_dict`.
+`dimension_history` in `phases_to_dict`/`phases_from_dict`;
+`_save_optimization_log` now includes `dimension_history` kwarg.
 
-**`prompts.py`** (+128/-5 lines): Static `_IMPROVEMENT_TEMPLATE` split into
-composable parts: `_IMPROVEMENT_HEADER` (feedback display),
-`_IMPROVEMENT_TASK_NORMAL` (standard instructions),
-`_IMPROVEMENT_TASK_FAILURE` (low-score reframing). New helpers:
+**`prompts.py`**: Static `_IMPROVEMENT_TEMPLATE` split into composable parts:
+`_IMPROVEMENT_HEADER` (feedback display), `_IMPROVEMENT_TASK_NORMAL` (standard
+instructions), `_IMPROVEMENT_TASK_FAILURE` (low-score reframing). New helpers:
 `_find_weakest_dimension()`, `_build_score_trajectory()`,
 `_build_dimension_focus()`. `build_improvement_prompt()` gains optional
 `feedback_history` kwarg; assembles prompt dynamically based on score level
 and available history.
 
-**`models.py`** (+1 line): `dimension_history: list[dict]` field on
+**`models.py`**: `dimension_history: list[dict]` field on
 `SeedOptimizationResult` with `field(default_factory=list)`.
 
-**Tests** (+454 lines across 4 files): 15 new test methods covering all
-changes with red/green TDD.
+**`test_live_e2e.py`**: 10 new live tests verifying GEPA prompt features:
+dimension_history persistence, per-dimension scores, score movement,
+improvement prompts, trajectory (skips at max_rounds=3, needs >=5),
+dimension focus, round-debug.json, judging dirs, optimization log
+dimension_history.
+
+**Unit tests**: 15 new test methods across 4 files covering all changes.
+
+### Live Run Observations (v3)
+
+**Run `20260302-083944-8642c7`** (WebSocket vs SSE, `--max-rounds 3`):
+
+| Agent | Seed | Round 2 | Round 3 | Round 4 | Final |
+|-------|------|---------|---------|---------|-------|
+| opencode-anthropic-fast | 7.6 | 6.8 | 7.4 | 3.8 | 7.6 (seed preserved) |
+| opencode-openai-fast | 8.4 | 8.1 | 7.8 | 7.4 | 8.4 (seed preserved) |
+
+**Features verified live:**
+- `dimension_history` persisted in manifest with per-dimension breakdowns
+- `Priority Focus` section present in improvement prompts (Source Quality, Depth of Analysis)
+- `round-debug.json` captures evaluator feedback dimensions
+- `dimension_history` in optimization log JSON
+- Judging round dirs contain `judge-prompt.md` files
+- GEPA Pareto tracking logs show per-objective frontier updates
+
+**Features not exercised (by design):**
+- Score Trajectory: requires 2+ proposer calls, but GEPA's metric budget
+  allows only ~1 iteration per 2 `max_metric_calls`. At `max_rounds=3`
+  (4 metric calls), only 1 proposer call occurs. Needs `max_rounds>=5`.
+- Failure-mode framing: no seed scored below 4.0 in this run. The
+  anthropic agent's round 4 scored 3.8 but that was a post-improvement
+  eval, not a seed. The feature is unit-tested.
+
+**Key insight:** GEPA uses ~2 evaluator calls per iteration (subsample +
+full valset). So `max_rounds=N` gives `(N+1)/2` GEPA iterations, meaning
+the proposer is called at most `floor((N+1)/2)` times.
 
 ### Remaining open gaps
 
