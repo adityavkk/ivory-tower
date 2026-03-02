@@ -466,6 +466,73 @@ def profiles() -> None:
 
 
 # ---------------------------------------------------------------------------
+# ivory agents
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def agents(
+    check: Annotated[
+        Optional[str],
+        typer.Argument(help="Agent name to check ACP connectivity"),
+    ] = None,
+) -> None:
+    """List configured agents from ~/.ivory-tower/agents/ or check one."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from ivory_tower.agents import AGENTS_DIR, load_agents, resolve_agent_binary
+
+    if check is not None:
+        # Check a specific agent
+        from ivory_tower.agents import load_agent
+
+        try:
+            config = load_agent(check)
+        except FileNotFoundError as exc:
+            typer.echo(f"Error: {exc}", err=True)
+            raise typer.Exit(code=1)
+
+        try:
+            binary = resolve_agent_binary(config)
+            typer.echo(
+                f"{config.name}: OK ({config.protocol}, "
+                f"binary={binary})"
+            )
+        except FileNotFoundError:
+            typer.echo(
+                f"{config.name}: FAIL (binary '{config.command}' not found on PATH)",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        return
+
+    # List all agents
+    all_agents = load_agents()
+    if not all_agents:
+        typer.echo(
+            f"No agents configured. Add YAML files to {AGENTS_DIR}/"
+        )
+        raise typer.Exit(code=0)
+
+    table = Table(title="Configured Agents")
+    table.add_column("Name", style="bold")
+    table.add_column("Protocol")
+    table.add_column("Command")
+    table.add_column("Binary")
+
+    for name, config in sorted(all_agents.items()):
+        try:
+            binary = str(resolve_agent_binary(config))
+        except FileNotFoundError:
+            binary = "(not found)"
+        table.add_row(name, config.protocol, config.command, binary)
+
+    console = Console()
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
 # ivory audit
 # ---------------------------------------------------------------------------
 
