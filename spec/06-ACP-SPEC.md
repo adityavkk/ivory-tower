@@ -8,6 +8,9 @@ depends_on: "03-SANDBOX-SPEC.md v1"
 
 # Ivory Tower v4 -- ACP-Native Agent Invocation
 
+> **Implementation status: COMPLETE.** All strategies use `AgentExecutor.run()`.
+> No direct `run_counselors()` calls remain in strategies. See `acp-integration` branch.
+
 Replace the `counselors` CLI dependency with direct Agent Client Protocol (ACP) invocation. Every agent that implements ACP becomes a first-class ivory-tower participant with no intermediary wrapper, no filesystem-convention coupling, and no output-format guessing.
 
 ## Problem Statement
@@ -285,12 +288,12 @@ uv run pytest tests/ -x -v
 ```
 src/ivory_tower/
   agents.py              # NEW: AgentConfig dataclass, load/list/validate agents
-  acp_client.py          # NEW: HeadlessACPClient (Client subclass), tool handlers
+  acp_client.py          # NEW: SandboxACPClient (Client subclass), tool handlers
   executor/
     acp_exec.py          # NEW: ACPExecutor (AgentExecutor implementation)
-    counselors_exec.py   # RENAMED: legacy_counselors_exec.py (kept for compat)
+    counselors_exec.py   # KEPT: CounselorsExecutor (legacy, kept for compat)
     types.py             # MODIFIED: AgentOutput gains session_id, chunks fields
-    __init__.py          # MODIFIED: registry adds "acp", renames "counselors" -> "legacy-counselors"
+    __init__.py          # MODIFIED: registry adds "acp", "headless", "direct"; keeps "counselors"
   counselors.py          # DEPRECATED: kept for LegacyCounselorsExecutor only
   cli.py                 # MODIFIED: agent commands, drop counselors validation
   strategies/
@@ -461,13 +464,14 @@ Session continuity: the adversarial strategy can optionally keep evaluator and p
 # Before
 EXECUTORS = {"counselors": CounselorsExecutor, "direct": DirectExecutor}
 
-# After
+# After (actual implementation)
 EXECUTORS = {
     "acp": ACPExecutor,
+    "counselors": CounselorsExecutor,
     "direct": DirectExecutor,
-    "legacy-counselors": LegacyCounselorsExecutor,
+    "headless": HeadlessExecExecutor,
 }
-DEFAULT_EXECUTOR = "acp"
+# No DEFAULT_EXECUTOR; routing is per-agent via YAML config protocol field
 ```
 
 ### CLI Changes
@@ -562,11 +566,11 @@ dependencies = [
 
 [project.optional-dependencies]
 adversarial = ["gepa >= 0.1"]
-legacy = ["counselors >= 0.1"]         # for LegacyCounselorsExecutor (new optional group)
 direct = ["litellm >= 1.0"]
+all = ["gepa >= 0.1", "litellm >= 1.0"]
 ```
 
-The `agent-client-protocol` package becomes a core dependency (it has only one dependency: `pydantic>=2.7`, which is lightweight). counselors moves to an optional dependency group.
+The `agent-client-protocol` package becomes a core dependency (it has only one dependency: `pydantic>=2.7`, which is lightweight). Note: the spec proposed a `legacy` optional group for counselors, but the actual implementation keeps counselors as an external CLI dependency (not a Python package), so no `legacy` group was created.
 
 ## Appendix A: Agent Compatibility Matrix and Wrapping Strategy
 

@@ -75,6 +75,12 @@ uv tool install ivory-tower
 
 # with adversarial strategy support (GEPA)
 uv tool install "ivory-tower[adversarial]"
+
+# with direct LLM executor (litellm) for adversarial evaluation
+uv tool install "ivory-tower[direct]"
+
+# everything
+uv tool install "ivory-tower[all]"
 ```
 
 ### Agent Setup
@@ -133,6 +139,12 @@ ivory research "topic" \
   -s opencode-haiku \
   --max-rounds 5
 
+# adversarial with direct LLM executor (100% JSON parse reliability, no agent runtime)
+ivory research "topic" \
+  --strategy adversarial \
+  --executor direct --model openai/claude-haiku-4-5 \
+  -a agent-a,agent-b -s agent-a
+
 # read topic from file
 ivory research -f topic.md -a opencode-haiku,opencode-gpt -s opencode-haiku
 
@@ -145,7 +157,7 @@ ivory research "topic" -a opencode-haiku,opencode-gpt -s opencode-haiku --stream
 | Strategy | Agents | Status | Description |
 |----------|--------|--------|-------------|
 | **council** | 2+ | stable | Independent research, skeptical cross-review, synthesis |
-| **adversarial** | 2 | stable | Iterative optimization scored by opposing agent via [GEPA](https://github.com/anomalyco/gepa) |
+| **adversarial** | 2 | stable | Iterative optimization scored by opposing agent via [GEPA](https://github.com/anomalyco/gepa). Supports `--executor direct` for 100% JSON parse reliability via litellm. |
 | **debate** | 2-6 | alpha | Turn-based argumentation with shared blackboard transcript |
 | **map-reduce** | 2-20 | alpha | Decompose topic into subtopics, one agent per subtopic, merge |
 | **red-blue** | 3-10 | alpha | Red team critiques, blue team defends, synthesizer reconciles |
@@ -190,6 +202,10 @@ ivory audit    RUN_DIR [AGENT]    Query sandbox audit trail
 | `--dry-run` | | Show the execution plan without running |
 | `--json` | | Print manifest JSON on completion |
 | `--stream` | | Stream live agent output to terminal (Rich Live panels) |
+| `--executor` | | Executor for adversarial GEPA loop: `counselors` (default) or `direct` (litellm) |
+| `--model` | | LLM model ID for direct executor (e.g., `openai/claude-haiku-4-5`) |
+| `--api-base` | | API base URL for direct executor |
+| `--parse-agent` | | Fallback agent for structured-output extraction when judge JSON parsing fails |
 | `--verbose` | `-v` | Rich logging with animated spinners and debug output |
 
 ### Agent profiles

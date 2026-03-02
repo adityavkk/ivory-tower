@@ -10,7 +10,7 @@ Ivory-tower dispatches N agents to research a topic in parallel, challenges them
 
 ACP integration complete. All strategies (council, adversarial) use `AgentExecutor.run()` -- no direct `run_counselors()` calls remain. Counselors executor preserved as legacy fallback.
 
-Adversarial strategy has known issues tracked in `spec/07-GEPA-FIXES.md`.
+GEPA integration gaps addressed: direct LLM executor for reliable JSON evaluation, per-dimension Pareto tracking (`frontier_type='objective'`), feedback history accumulation across rounds, evolved improvement prompts with trajectory/dimension targeting. Details in `spec/07-GEPA-FIXES.md`.
 
 ## Tech Stack
 
@@ -45,6 +45,7 @@ src/ivory_tower/
   profiles/           # AgentProfile loading from ~/.ivory-tower/profiles/
   sandbox/            # SandboxProvider Protocol; null, local, agentfs, daytona, blackboard
   strategies/         # ResearchStrategy Protocol; council, adversarial, debate, map_reduce, red_blue
+    direct_llm.py    #   direct LLM evaluator/proposer for GEPA (litellm-based)
   templates/          # YAML strategy templates; loader + GenericTemplateExecutor
   data/strategies/    # bundled .yml templates (council, adversarial, debate, map-reduce, red-blue)
 spec/                 # specs + known issues
@@ -55,7 +56,7 @@ spec/                 # specs + known issues
   05-SANDBOX-FIXES.md # sandbox live testing issues
   06-ACP-SPEC.md      # v4: ACP-native agent invocation
   07-GEPA-FIXES.md    # GEPA integration gap analysis
-tests/                # mirrors source; 33 test files
+tests/                # mirrors source; 36 test files
 research/             # output from real runs (disposable)
 ```
 
@@ -64,6 +65,7 @@ research/             # output from real runs (disposable)
 ```bash
 ivory research "topic" -a agent1,agent2 -s synthesizer     # council (default)
 ivory research "topic" --strategy adversarial -a a,b -s a   # adversarial
+ivory research "topic" --strategy adversarial --executor direct --model openai/claude-haiku-4-5 -a a,b -s a  # adversarial with direct LLM
 ivory research "topic" --template debate -a a,b -s a        # YAML template
 ivory resume <run-dir>                                       # resume partial
 ivory status <run-dir>                                       # show status
@@ -78,6 +80,7 @@ ivory strategies / templates / profiles / audit              # introspection
 ```bash
 uv tool install ivory-tower                         # standard install
 uv tool install "ivory-tower[adversarial]"          # with GEPA
+uv tool install "ivory-tower[direct]"               # with direct executor (litellm)
 uv run pytest tests/ -x -v                          # mocked tests (excludes @live)
 uv run pytest tests/ -m live -v -s                  # live e2e (calls real agents)
 uv run pytest tests/test_sandbox_integration.py     # sandbox integration
@@ -160,7 +163,7 @@ The 10MB stdio buffer (`transport_kwargs={"limit": 10*1024*1024}`) in `acp_exec.
 
 ## Fragile Areas -- Tread Carefully
 
-- **`strategies/adversarial.py`** (~1300 lines): most complex file. GEPA integration, 5 JSON extraction strategies, score parsing from prose, feedback extraction. Known open issues in `spec/07-GEPA-FIXES.md`.
+- **`strategies/adversarial.py`** (~1540 lines): most complex file. GEPA integration, 5 JSON extraction strategies, score parsing from prose, feedback extraction, per-dimension Pareto tracking, feedback history accumulation. See `spec/07-GEPA-FIXES.md` for GEPA gap analysis.
 - **Legacy counselors executor**: `executor/counselors_exec.py` still wraps the counselors CLI for backward compatibility. Output parsing lives in that executor. Strategies no longer call `run_counselors()` directly -- they go through the `AgentExecutor` protocol. ACP agents produce structured output (no filesystem scraping).
 - **`acp_client.py`**: Path traversal prevention and isolation mode enforcement. Changes to `_resolve_sandbox_path()` or `_check_read_allowed()`/`_check_write_allowed()` affect security boundaries.
 
