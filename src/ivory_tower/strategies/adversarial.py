@@ -159,6 +159,117 @@ def _find_best_report_file(slug_dir: Path, initial_file: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# LLM-based structured output fallback
+# ---------------------------------------------------------------------------
+
+_PARSE_AGENT_PROMPT = """\
+# Structured JSON Extraction
+
+You are a structured output extractor. Below is the raw text output from an AI
+agent that was asked to evaluate a research report. The agent was supposed to
+include a JSON object with specific keys, but the JSON could not be parsed from
+the output automatically.
+
+Your ONLY job: extract the evaluation data from the text below and return it as
+a single valid JSON object. Do NOT add commentary, explanation, or markdown
+formatting. Return ONLY the JSON object.
+
+## Required JSON Schema
+
+{{
+  "overall_score": <float 1.0-10.0>,
+  "dimensions": {{
+    "factual_accuracy": <int 1-10>,
+    "depth_of_analysis": <int 1-10>,
+    "source_quality": <int 1-10>,
+    "coverage_breadth": <int 1-10>,
+    "analytical_rigor": <int 1-10>
+  }},
+  "strengths": [<string>, ...],
+  "weaknesses": [<string>, ...],
+  "suggestions": [<string>, ...],
+  "critique": <string>
+}}
+
+Rules:
+- If the text contains explicit scores, use those exact values.
+- If the text describes quality without explicit scores, infer reasonable scores from context.
+- The "critique" field should be a 2-3 paragraph summary of the evaluation.
+- "strengths", "weaknesses", and "suggestions" should each contain 2-5 items.
+- Return ONLY valid JSON. No markdown fences, no prose, no explanation.
+
+## Raw Judge Output
+
+{raw_text}"""
+
+
+def _llm_extract_json(
+    raw_text: str,
+    parse_agent: str,
+    output_dir: Path,
+    verbose: bool = False,
+) -> str | None:
+    """Use a fast LLM agent to extract structured JSON from unparseable judge output.
+
+    Dispatches via ``counselors run`` to *parse_agent* with a prompt that
+    asks the agent to return only the required JSON schema.  Returns the
+    extracted JSON string or ``None`` if the extraction also fails.
+    """
+    from ivory_tower.log import phase_spinner
+
+    parse_dir = output_dir / "parse-agent-fallback"
+    parse_dir.mkdir(parents=True, exist_ok=True)
+
+    prompt_text = _PARSE_AGENT_PROMPT.format(raw_text=raw_text)
+    prompt_file = parse_dir / "parse-prompt.md"
+    prompt_file.write_text(prompt_text)
+
+    logger.info(
+        "[parse-agent] Dispatching %s to extract structured JSON from unparseable judge output (%d chars)",
+        parse_agent, len(raw_text),
+    )
+
+    try:
+        with phase_spinner(f"Parse agent ({parse_agent}) extracting JSON"):
+            run_counselors(
+                prompt_file=prompt_file,
+                agents=[parse_agent],
+                output_dir=parse_dir,
+                verbose=verbose,
+            )
+    except Exception:
+        logger.warning("[parse-agent] counselors run failed for parse agent", exc_info=True)
+        return None
+
+    # Read the parse agent's output
+    try:
+        result_text = read_counselors_output(parse_dir, parse_agent)
+    except FileNotFoundError:
+        logger.warning("[parse-agent] No output file found from parse agent")
+        return None
+
+    # Save for debugging
+    (parse_dir / "parse-result.md").write_text(result_text)
+
+    # The parse agent should return clean JSON -- try extracting it
+    extracted = _extract_json_from_markdown(result_text)
+    if extracted is not None:
+        try:
+            data = json.loads(extracted)
+            if isinstance(data, dict) and "overall_score" in data:
+                logger.info(
+                    "[parse-agent] Successfully extracted JSON via %s: score=%.1f",
+                    parse_agent, float(data.get("overall_score", 0)),
+                )
+                return extracted
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+
+    logger.warning("[parse-agent] Parse agent output did not contain valid evaluation JSON")
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
 
@@ -289,7 +400,12 @@ def _extract_score_from_text(text: str) -> float | None:
     return None
 
 
-def parse_judge_output(judging_dir: Path) -> tuple[float, dict]:
+def parse_judge_output(
+    judging_dir: Path,
+    *,
+    parse_agent: str | None = None,
+    verbose: bool = False,
+) -> tuple[float, dict]:
     """Parse judge output from a counselors output directory.
 
     Reads agent output ``.md`` files recursively and tries multiple
@@ -297,15 +413,21 @@ def parse_judge_output(judging_dir: Path) -> tuple[float, dict]:
     summaries) that may contain template/example JSON.
 
     1. JSON extraction from each file (via ``_extract_json_from_markdown``)
-    2. Score extraction from natural language prose (via ``_extract_score_from_text``)
-    3. Returns raw text as ``critique`` so the proposer still gets feedback
+    2. LLM-based structured output extraction (if *parse_agent* is set)
+    3. Score extraction from natural language prose (via ``_extract_score_from_text``)
+    4. Returns raw text as ``critique`` so the proposer still gets feedback
+
+    When *parse_agent* is provided and regex-based extraction fails, a fast
+    LLM agent is dispatched via ``counselors run`` to re-format the raw judge
+    output into the expected JSON schema.
 
     Returns ``(score, asi_dict)``.
     """
-    _EXCLUDED_NAMES = {"prompt.md", "judge-prompt.md", "summary.md"}
+    _EXCLUDED_NAMES = {"prompt.md", "judge-prompt.md", "summary.md", "parse-prompt.md"}
     md_files = [
         f for f in judging_dir.glob("**/*.md")
         if f.name not in _EXCLUDED_NAMES
+        and "parse-agent-fallback" not in str(f)
     ]
     if not md_files:
         logger.warning("No .md files found in %s", judging_dir)
@@ -322,7 +444,7 @@ def parse_judge_output(judging_dir: Path) -> tuple[float, dict]:
     if not all_texts:
         return 0.0, {"error": f"Could not read any files in {judging_dir}"}
 
-    # Strategy 1: Try JSON extraction from each file
+    # Strategy 1: Try JSON extraction from each file (regex-based)
     for raw_text in all_texts:
         json_str = _extract_json_from_markdown(raw_text)
         if json_str is not None:
@@ -345,9 +467,42 @@ def parse_judge_output(judging_dir: Path) -> tuple[float, dict]:
                 logger.warning("JSON decode failed for candidate from %s", judging_dir.name)
                 continue
 
-    # Strategy 2: Try extracting score from natural language prose
-    logger.warning("No parseable JSON in %s, falling back to text extraction", judging_dir.name)
+    # Strategy 2: LLM-based structured output extraction (optional)
     combined_text = "\n\n".join(all_texts)
+    if parse_agent is not None:
+        logger.warning(
+            "No parseable JSON in %s, trying parse-agent fallback (%s)",
+            judging_dir.name, parse_agent,
+        )
+        llm_json = _llm_extract_json(
+            raw_text=combined_text,
+            parse_agent=parse_agent,
+            output_dir=judging_dir,
+            verbose=verbose,
+        )
+        if llm_json is not None:
+            try:
+                data = json.loads(llm_json)
+                if isinstance(data, dict) and "overall_score" in data:
+                    score = float(data.get("overall_score", 0.0))
+                    score = max(0.0, min(10.0, score))
+                    asi = {
+                        "dimensions": data.get("dimensions", {}),
+                        "strengths": data.get("strengths", []),
+                        "weaknesses": data.get("weaknesses", []),
+                        "suggestions": data.get("suggestions", []),
+                        "critique": data.get("critique", ""),
+                    }
+                    logger.info(
+                        "Judge score from %s: %.1f (parse-agent %s)",
+                        judging_dir.name, score, parse_agent,
+                    )
+                    return score, asi
+            except (json.JSONDecodeError, TypeError, ValueError):
+                logger.warning("Parse-agent JSON decode failed for %s", judging_dir.name)
+
+    # Strategy 3: Try extracting score from natural language prose
+    logger.warning("No parseable JSON in %s, falling back to text extraction", judging_dir.name)
     prose_score = _extract_score_from_text(combined_text)
     if prose_score is not None:
         logger.info("Judge score from %s: %.1f (extracted from prose)", judging_dir.name, prose_score)
@@ -359,7 +514,7 @@ def parse_judge_output(judging_dir: Path) -> tuple[float, dict]:
             "critique": combined_text,
         }
 
-    # Strategy 3: Return error but include raw text as critique for feedback
+    # Strategy 4: Return error but include raw text as critique for feedback
     logger.warning("Could not extract any score from %s, returning 0.0", judging_dir.name)
     return 0.0, {
         "error": "Failed to parse judge output as JSON",
@@ -568,6 +723,7 @@ class AdversarialStrategy:
                 instructions=config.instructions,
                 verbose=config.verbose,
                 max_rounds=config.max_rounds,
+                parse_agent=getattr(config, "parse_agent", None),
             ),
             phases={
                 "seed_generation": ResearchPhase(
@@ -916,7 +1072,11 @@ class AdversarialStrategy:
                     )
 
                 # Parse output
-                score, asi = parse_judge_output(round_dir)
+                score, asi = parse_judge_output(
+                    round_dir,
+                    parse_agent=config.parse_agent,
+                    verbose=config.verbose,
+                )
 
                 # Save judge output as readable file
                 judge_md = judging_dir / f"round-{round_num:02d}-{judge}-judges-{agent}.md"
@@ -988,7 +1148,11 @@ class AdversarialStrategy:
                     reverse=True,
                 )
                 if judge_round_dirs:
-                    disk_score, disk_asi = parse_judge_output(judge_round_dirs[0])
+                    disk_score, disk_asi = parse_judge_output(
+                        judge_round_dirs[0],
+                        parse_agent=config.parse_agent,
+                        verbose=config.verbose,
+                    )
                     if disk_score > 0.0 or disk_asi.get("critique"):
                         feedback = {
                             "score": disk_score,

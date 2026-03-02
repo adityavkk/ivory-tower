@@ -80,6 +80,13 @@ def research(
         int,
         typer.Option("--max-rounds", help="Max optimization rounds (adversarial only)"),
     ] = 10,
+    parse_agent: Annotated[
+        Optional[str],
+        typer.Option(
+            "--parse-agent",
+            help="Agent to use as structured-output fallback when judge JSON parsing fails (adversarial only)",
+        ),
+    ] = None,
     sandbox: Annotated[
         str,
         typer.Option("--sandbox", help="Sandbox backend (none, local, agentfs, daytona)"),
@@ -181,6 +188,8 @@ def research(
         agent_list.append(profile.model or profile.name)
 
     all_agents = agent_list + [synthesizer]
+    if parse_agent is not None:
+        all_agents.append(parse_agent)
     available = list_available_agents()
     invalid = validate_agents(all_agents, available)
     if invalid:
@@ -222,6 +231,7 @@ def research(
         dry_run=dry_run,
         strategy=resolved_strategy,
         max_rounds=max_rounds,
+        parse_agent=parse_agent,
         sandbox_backend=sandbox,
         template=template,
         rounds=rounds,

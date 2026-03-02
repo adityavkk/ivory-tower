@@ -32,6 +32,7 @@ class RunConfig:
     strategy: str = "council"
     max_rounds: int = 10
     sandbox_backend: str = "none"
+    parse_agent: str | None = None
     template: str | None = None
     rounds: int | None = None
     red_team: list[str] | None = None
@@ -142,6 +143,7 @@ def resume_pipeline(run_dir: Path, verbose: bool = False) -> Path:
         output_dir=run_dir.parent,
         strategy=manifest.strategy,
         max_rounds=manifest.flags.max_rounds,
+        parse_agent=manifest.flags.parse_agent,
     )
 
     strategy.resume(run_dir, config, manifest)

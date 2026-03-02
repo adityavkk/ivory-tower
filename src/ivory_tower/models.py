@@ -85,6 +85,7 @@ class Flags:
     instructions: str | None = None
     verbose: bool = False
     max_rounds: int = 10
+    parse_agent: str | None = None
 
 
 @dataclass
@@ -128,6 +129,7 @@ class Manifest:
                 "instructions": self.flags.instructions,
                 "verbose": self.flags.verbose,
                 "max_rounds": self.flags.max_rounds,
+                "parse_agent": self.flags.parse_agent,
             },
             "phases": phases_dict,
             "total_duration_seconds": self.total_duration_seconds,
@@ -196,6 +198,7 @@ class Manifest:
             instructions=flags_d["instructions"],
             verbose=flags_d["verbose"],
             max_rounds=flags_d.get("max_rounds", 10),
+            parse_agent=flags_d.get("parse_agent"),
         )
 
         strategy = data.get("strategy", "council")
