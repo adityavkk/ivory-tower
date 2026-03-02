@@ -187,7 +187,7 @@ Here is an example of the expected JSON format:
 
 IMPORTANT: The JSON object must appear on the very last line of your response."""
 
-_IMPROVEMENT_TEMPLATE = """\
+_IMPROVEMENT_HEADER = """\
 # Research Report Improvement -- Round {round_num}
 
 You previously wrote a research report. An independent AI agent has evaluated it
@@ -220,8 +220,9 @@ and provided detailed feedback. Your job is to produce a STRICTLY BETTER version
 {suggestions}
 
 ### Detailed Critique
-{critique}
+{critique}"""
 
+_IMPROVEMENT_TASK_NORMAL = """
 ## Your Task
 
 Produce an improved version of your research report that:
@@ -234,6 +235,34 @@ Produce an improved version of your research report that:
 
 Write the complete improved report as a standalone document. Do not reference
 the judge or this improvement process in the output."""
+
+_IMPROVEMENT_TASK_FAILURE = """
+## CRITICAL: Your Submission Is Not Meeting Basic Requirements
+
+Your current score of {score}/10 indicates fundamental problems. The judge's
+feedback suggests your submission may not be a proper research report at all.
+
+**Do NOT attempt to incrementally improve what you have.** Instead:
+
+1. **Start fresh** -- write a complete, standalone research report on the topic
+2. **Conduct thorough web research** -- find authoritative primary sources
+3. **Follow standard report structure** -- introduction, findings, analysis, conclusion, sources
+4. **Address the specific failures** the judge identified: {weakest_dimension_label} scored only {weakest_score}/10
+5. **Produce a real research artifact** -- not workflow notes, planning documents, or meta-commentary
+
+Write the complete report as a standalone document. Do not reference
+the judge or this improvement process in the output."""
+
+# Threshold below which the failure-mode prompt is used instead of normal.
+_FAILURE_SCORE_THRESHOLD = 4.0
+
+_DIMENSION_LABELS = {
+    "factual_accuracy": "Factual Accuracy",
+    "depth_of_analysis": "Depth of Analysis",
+    "source_quality": "Source Quality",
+    "coverage_breadth": "Coverage Breadth",
+    "analytical_rigor": "Analytical Rigor",
+}
 
 _ADVERSARIAL_SYNTHESIS_TEMPLATE = """\
 # Research Synthesis (Adversarial)
@@ -279,19 +308,78 @@ def build_judging_prompt(topic: str, candidate_report: str) -> str:
     return _JUDGING_TEMPLATE.format(topic=topic, candidate_report=candidate_report)
 
 
+def _find_weakest_dimension(dims: dict) -> tuple[str, float]:
+    """Return (dimension_key, score) for the lowest-scoring dimension."""
+    if not dims:
+        return "", 0.0
+    numeric = {}
+    for k, v in dims.items():
+        try:
+            numeric[k] = float(v)
+        except (TypeError, ValueError):
+            pass
+    if not numeric:
+        return "", 0.0
+    weakest = min(numeric, key=numeric.get)  # type: ignore[arg-type]
+    return weakest, numeric[weakest]
+
+
+def _build_score_trajectory(
+    feedback_history: list[dict],
+    current_score: float,
+    current_round: int,
+) -> str:
+    """Build a markdown score trajectory section from feedback history."""
+    lines = ["", "## Score Trajectory", ""]
+    for entry in feedback_history:
+        r = entry.get("round", "?")
+        s = entry.get("score", 0.0)
+        lines.append(f"- Round {r}: {s}/10")
+    lines.append(f"- Round {current_round} (current): {current_score}/10")
+    return "\n".join(lines)
+
+
+def _build_dimension_focus(dims: dict) -> str:
+    """Build a section highlighting the weakest dimension for targeted improvement."""
+    weakest_key, weakest_score = _find_weakest_dimension(dims)
+    if not weakest_key:
+        return ""
+    label = _DIMENSION_LABELS.get(weakest_key, weakest_key.replace("_", " ").title())
+    return (
+        f"\n## Priority Focus\n\n"
+        f"Your weakest dimension is **{label}** at {weakest_score}/10. "
+        f"Prioritize improvements in this area above all others. "
+        f"Specifically target the feedback related to {label.lower()} "
+        f"before addressing other dimensions."
+    )
+
+
 def build_improvement_prompt(
     topic: str,
     current_report: str,
     judge_feedback: dict,
     round_num: int,
+    *,
+    feedback_history: list[dict] | None = None,
 ) -> str:
-    """Build the adversarial improvement prompt."""
+    """Build the adversarial improvement prompt.
+
+    When *feedback_history* is provided (a list of dicts with ``round``,
+    ``score``, and ``dimensions`` keys from prior rounds), the prompt
+    includes a score trajectory and dimension-targeting guidance.
+
+    When the current score is below the failure threshold (< 4.0), the
+    prompt uses a failure-mode framing that asks the agent to start fresh
+    rather than incrementally improve.
+    """
     dims = judge_feedback.get("dimensions", {})
-    return _IMPROVEMENT_TEMPLATE.format(
+    score = judge_feedback.get("score", 0)
+
+    header = _IMPROVEMENT_HEADER.format(
         round_num=round_num,
         topic=topic,
         current_report=current_report,
-        score=judge_feedback.get("score", 0),
+        score=score,
         factual_accuracy=dims.get("factual_accuracy", 0),
         depth_of_analysis=dims.get("depth_of_analysis", 0),
         source_quality=dims.get("source_quality", 0),
@@ -302,6 +390,36 @@ def build_improvement_prompt(
         suggestions=_format_list(judge_feedback.get("suggestions", [])),
         critique=judge_feedback.get("critique", "(no critique provided)"),
     )
+
+    parts = [header]
+
+    # Score trajectory from prior rounds
+    if feedback_history:
+        parts.append(_build_score_trajectory(feedback_history, float(score), round_num))
+
+    # Dimension-specific targeting
+    dimension_focus = _build_dimension_focus(dims)
+    if dimension_focus:
+        parts.append(dimension_focus)
+
+    # Failure-mode vs normal task framing
+    try:
+        numeric_score = float(score)
+    except (TypeError, ValueError):
+        numeric_score = 0.0
+
+    if numeric_score < _FAILURE_SCORE_THRESHOLD:
+        weakest_key, weakest_score = _find_weakest_dimension(dims)
+        label = _DIMENSION_LABELS.get(weakest_key, weakest_key.replace("_", " ").title()) if weakest_key else "multiple areas"
+        parts.append(_IMPROVEMENT_TASK_FAILURE.format(
+            score=score,
+            weakest_dimension_label=label,
+            weakest_score=weakest_score,
+        ))
+    else:
+        parts.append(_IMPROVEMENT_TASK_NORMAL)
+
+    return "\n".join(parts)
 
 
 def build_adversarial_synthesis_prompt(
