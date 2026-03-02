@@ -428,6 +428,7 @@ def _fake_gepa_modules():
     class EngineConfig:
         max_metric_calls: int = 3
         raise_on_exception: bool = True
+        frontier_type: str | None = None
 
     @dataclass
     class ReflectionConfig:
@@ -867,6 +868,57 @@ class TestAdversarialEvaluatorAndProposer:
         judge_prompts = [p for p in prompt_texts if "judg" in p.lower() or "evaluat" in p.lower()]
         # At minimum we should have judging + improvement calls per agent
         assert len(prompt_texts) >= 4  # seed gen + judge + improve + synthesis (minimum)
+
+
+class TestGEPAConfigFrontierType:
+    """Gap 1 completion: GEPAConfig should set frontier_type='objective' for Pareto."""
+
+    def _setup_run_dir(self, tmp_path):
+        run_dir = tmp_path / "run-adv-001"
+        for d in ("phase1", "phase2", "phase3"):
+            (run_dir / d).mkdir(parents=True, exist_ok=True)
+        return run_dir
+
+    @patch("ivory_tower.strategies.adversarial.run_counselors")
+    def test_gepa_config_sets_objective_frontier(self, mock_counselors, tmp_path):
+        """EngineConfig should set frontier_type='objective' for per-dimension Pareto."""
+        s = AdversarialStrategy()
+        config = _make_config(output_dir=tmp_path, max_rounds=1)
+        m = _make_adversarial_manifest(config)
+        run_dir = self._setup_run_dir(tmp_path)
+
+        def tracking_counselors(prompt_file, agents, output_dir, verbose=False):
+            slug = output_dir / "slug-001"
+            slug.mkdir(parents=True, exist_ok=True)
+            for agent in agents:
+                (slug / f"{agent}.md").write_text(json.dumps({
+                    "overall_score": 6.0, "dimensions": {}, "strengths": [],
+                    "weaknesses": [], "suggestions": [], "critique": "ok",
+                }))
+            return MagicMock(returncode=0)
+
+        mock_counselors.side_effect = tracking_counselors
+
+        gepa_mod, gepa_oa = _fake_gepa_modules()
+        captured_configs = []
+
+        def fake_optimize(seed_candidate, *, evaluator, objective=None, config=None, **kw):
+            captured_configs.append(config)
+            score, asi = evaluator(seed_candidate)
+            proposer_fn = config.reflection.custom_candidate_proposer
+            improved = proposer_fn(seed_candidate, {}, [])
+            return _make_optimize_result(improved, best_score=score)
+
+        gepa_oa.optimize_anything = MagicMock(side_effect=fake_optimize)
+
+        with _patch_gepa_import(gepa_mod, gepa_oa):
+            s.run(run_dir, config, m)
+
+        assert len(captured_configs) >= 2  # one per agent
+        for cfg in captured_configs:
+            assert cfg.engine.frontier_type == "objective", (
+                f"Expected frontier_type='objective', got {cfg.engine.frontier_type!r}"
+            )
 
 
 class TestProposerFeedbackHistory:

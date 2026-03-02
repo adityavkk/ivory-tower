@@ -77,6 +77,7 @@ def _fake_gepa_modules():
     class EngineConfig:
         max_metric_calls: int = 3
         raise_on_exception: bool = True
+        frontier_type: str | None = None
 
     @dataclass
     class ReflectionConfig:

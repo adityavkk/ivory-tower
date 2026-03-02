@@ -1274,6 +1274,10 @@ class AdversarialStrategy:
                     # seed before any improvement rounds begin.
                     max_metric_calls=max_rounds + 1,
                     raise_on_exception=False,
+                    # Enable per-dimension Pareto tracking.  With 'objective',
+                    # GEPA maintains a frontier entry per named score so
+                    # candidates excelling on different dimensions coexist.
+                    frontier_type="objective",
                 ),
                 reflection=ReflectionConfig(
                     custom_candidate_proposer=proposer,
