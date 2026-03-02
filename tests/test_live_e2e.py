@@ -308,11 +308,12 @@ class TestAdversarialLiveE2E:
     def test_improvement_prompt_has_trajectory(self, run_dir: Path):
         """Second and later improvement prompts should contain a Score Trajectory.
 
-        With max_rounds=3, GEPA calls the proposer up to 3 times.  The first
-        proposer call has empty feedback_history (no trajectory). The second
-        and later calls should include "Score Trajectory" showing prior rounds.
-        Improvement dirs are named ``{agent}-improve-round-NN`` where NN is
-        the GEPA round counter (not the improvement-call ordinal).
+        Each GEPA iteration uses ~2 evaluator calls (subsample + full valset),
+        so max_rounds=3 (4 metric calls) typically produces only 1 proposer
+        call per agent.  The trajectory feature requires 2+ proposer calls.
+        This test may skip at max_rounds=3; it becomes reliable at max_rounds>=5.
+        The trajectory logic itself is verified by the unit test
+        ``TestProposerFeedbackHistory::test_improvement_prompt_contains_score_trajectory``.
         """
         phase2 = run_dir / "phase2"
         found_trajectory = False
@@ -411,9 +412,13 @@ class TestAdversarialLiveE2E:
                 pytest.skip("No improvement rounds occurred")
 
     def test_judging_round_dirs_contain_judge_prompt(self, run_dir: Path):
-        """Each judging round should have a judge-prompt.md file."""
+        """Each judging round directory should have a judge-prompt.md file."""
         phase2 = run_dir / "phase2"
-        judging_dirs = sorted(phase2.glob("judging/round-*"))
+        # Filter to directories only -- the judging dir also contains .md
+        # summary files alongside the round directories.
+        judging_dirs = sorted(
+            d for d in phase2.glob("judging/round-*") if d.is_dir()
+        )
         assert len(judging_dirs) >= 2, (
             f"Expected at least 2 judging round dirs, found {len(judging_dirs)}"
         )
