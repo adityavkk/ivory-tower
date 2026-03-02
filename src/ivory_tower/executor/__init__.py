@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from .acp_exec import ACPExecutor
 from .counselors_exec import CounselorsExecutor
 from .direct import DirectExecutor
 from .types import AgentExecutor, AgentOutput
 
 EXECUTORS: dict[str, type] = {
+    "acp": ACPExecutor,
     "counselors": CounselorsExecutor,
     "direct": DirectExecutor,
 }
@@ -25,6 +27,7 @@ def get_executor(name: str) -> AgentExecutor:
 
 
 __all__ = [
+    "ACPExecutor",
     "AgentExecutor",
     "AgentOutput",
     "CounselorsExecutor",
