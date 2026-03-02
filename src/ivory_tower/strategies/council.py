@@ -1,15 +1,32 @@
-"""Council strategy: the original 3-phase multi-agent research pipeline."""
+"""Council strategy: the original 3-phase multi-agent research pipeline.
+
+Uses the AgentExecutor protocol for agent invocation. Each agent is invoked
+via its configured executor (ACP, headless, or legacy counselors) through
+a per-agent sandbox. Agent output is captured from AgentOutput.raw_output --
+no filesystem-convention scraping.
+"""
 
 from __future__ import annotations
 
-import shutil
+import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ivory_tower.counselors import CounselorsError, run_counselors
+from ivory_tower.executor import get_executor, get_executor_for_agent
+from ivory_tower.executor.types import AgentExecutor, AgentOutput
+from ivory_tower.log import (
+    SYM_OK,
+    create_agent_progress,
+    fmt_agent,
+    fmt_bullet,
+    fmt_duration,
+    fmt_ok,
+    fmt_phase,
+    phase_spinner,
+)
 from ivory_tower.models import (
     AgentResult,
     CrossPollinationPhase,
@@ -25,19 +42,8 @@ from ivory_tower.prompts import (
     build_research_prompt,
     build_synthesis_prompt,
 )
-
-import logging
-
-from ivory_tower.log import (
-    SYM_OK,
-    create_agent_progress,
-    fmt_agent,
-    fmt_bullet,
-    fmt_duration,
-    fmt_ok,
-    fmt_phase,
-    phase_spinner,
-)
+from ivory_tower.sandbox import get_provider
+from ivory_tower.sandbox.types import Sandbox, SandboxConfig
 
 logger = logging.getLogger(__name__)
 
@@ -46,34 +52,57 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _normalize_counselors_output(
-    output_dir: Path, agents: list[str], suffix: str = "-report.md"
-) -> None:
-    """Copy agent outputs from counselors slug subdirectory to expected paths.
+def _get_executor(agent_name: str) -> AgentExecutor:
+    """Get the executor for an agent, falling back to counselors if no config.
 
-    Some agents (e.g. OpenCode) write to ``report.md`` instead of
-    ``{agent}.md``.  When there is exactly one agent and the expected
-    file is missing, fall back to ``report.md``.
+    Tries to load the agent config from ~/.ivory-tower/agents/<name>.yml
+    and returns the appropriate executor. If no config exists, falls back
+    to the legacy CounselorsExecutor.
     """
-    slug_dirs = sorted(
-        (d for d in output_dir.iterdir() if d.is_dir()),
-        key=lambda d: d.stat().st_mtime,
-        reverse=True,
-    )
-    if not slug_dirs:
-        return
+    try:
+        return get_executor_for_agent(agent_name)
+    except FileNotFoundError:
+        logger.debug(
+            "No agent config for '%s', falling back to counselors executor",
+            agent_name,
+        )
+        return get_executor("counselors")
 
-    slug_dir = slug_dirs[0]
-    for agent in agents:
-        src = slug_dir / f"{agent}.md"
-        dst = output_dir / f"{agent}{suffix}"
-        if not src.exists() and len(agents) == 1:
-            # Fallback: some agents write report.md instead of {agent}.md
-            fallback = slug_dir / "report.md"
-            if fallback.exists():
-                src = fallback
-        if src.exists() and not dst.exists():
-            shutil.copy2(src, dst)
+
+def _create_sandbox(
+    run_dir: Path, agent_name: str, run_id: str, backend: str = "none",
+) -> Sandbox:
+    """Create a sandbox for an agent in the given run directory."""
+    provider = get_provider(backend)
+    config = SandboxConfig(backend=backend)
+    return provider.create_sandbox(
+        agent_name=agent_name,
+        run_id=run_id,
+        run_dir=run_dir,
+        config=config,
+    )
+
+
+def _run_agent(
+    executor: AgentExecutor,
+    sandbox: Sandbox,
+    agent_name: str,
+    prompt: str,
+    output_dir: str,
+    verbose: bool = False,
+) -> AgentOutput:
+    """Run an agent through the executor and return its output.
+
+    Wraps executor.run() with consistent parameters. The executor handles
+    all protocol-specific details (ACP lifecycle, headless parsing, etc.).
+    """
+    return executor.run(
+        sandbox=sandbox,
+        agent_name=agent_name,
+        prompt=prompt,
+        output_dir=output_dir,
+        verbose=verbose,
+    )
 
 
 class CouncilStrategy:
@@ -320,7 +349,12 @@ class CouncilStrategy:
     # -- Private phase execution methods --
 
     def _run_phase1(self, run_dir: Path, config: Any, manifest: Manifest) -> Manifest:
-        """Execute Phase 1: independent research by all agents."""
+        """Execute Phase 1: independent research by all agents.
+
+        Each agent receives the research prompt and produces a report.
+        Agents run concurrently via ThreadPoolExecutor, each through its
+        own executor and sandbox.
+        """
         research: ResearchPhase = manifest.phases["research"]
         research.status = PhaseStatus.RUNNING
         research.started_at = _now_iso()
@@ -338,25 +372,40 @@ class CouncilStrategy:
         phase1_dir = run_dir / "phase1"
         phase1_dir.mkdir(parents=True, exist_ok=True)
 
+        sandbox_backend = getattr(config, "sandbox_backend", "none")
+        run_id = manifest.run_id
+
         t0 = time.monotonic()
         try:
             agents_label = ", ".join(config.agents)
             with phase_spinner(f"Agents researching: [agent]{agents_label}[/agent]"):
-                run_counselors(
-                    prompt_file=prompt_file,
-                    agents=config.agents,
-                    output_dir=phase1_dir,
-                    verbose=config.verbose,
-                )
-        except CounselorsError:
+                with ThreadPoolExecutor() as pool:
+                    futures = {}
+                    for agent in config.agents:
+                        executor = _get_executor(agent)
+                        sandbox = _create_sandbox(run_dir, agent, run_id, sandbox_backend)
+                        futures[pool.submit(
+                            _run_agent, executor, sandbox, agent,
+                            prompt_text, f"phase1/{agent}", config.verbose,
+                        )] = agent
+
+                    for future in as_completed(futures):
+                        agent = futures[future]
+                        result = future.result()
+                        # Write report from agent output to canonical path
+                        report_path = phase1_dir / f"{agent}-report.md"
+                        report_path.write_text(result.raw_output)
+                        logger.debug(
+                            "[%s] Phase 1 report: %d chars",
+                            agent, len(result.raw_output),
+                        )
+
+        except Exception:
             research.status = PhaseStatus.FAILED
             research.completed_at = _now_iso()
             research.duration_seconds = time.monotonic() - t0
             manifest.save(run_dir / "manifest.json")
             raise
-
-        logger.info(fmt_bullet("Counselors session complete, normalizing output"))
-        _normalize_counselors_output(phase1_dir, config.agents, suffix="-report.md")
 
         elapsed = time.monotonic() - t0
         research.status = PhaseStatus.COMPLETE
@@ -402,25 +451,28 @@ class CouncilStrategy:
         )
 
         session_key = f"{agent}-refined"
-        prompt_file = run_dir / "phase2" / f"{session_key}-prompt.md"
+        # Save prompt for inspection
+        prompt_file = phase2_dir / f"{session_key}-prompt.md"
         prompt_file.write_text(prompt_text)
 
-        session_out_dir = phase2_dir / f"{session_key}-out"
-        session_out_dir.mkdir(parents=True, exist_ok=True)
+        sandbox_backend = getattr(config, "sandbox_backend", "none")
+        run_id = getattr(config, "_run_id", "unknown")
+        # Try to get run_id from the run_dir name if not on config
+        if run_id == "unknown":
+            run_id = run_dir.name
+
+        executor = _get_executor(agent)
+        sandbox = _create_sandbox(run_dir, agent, run_id, sandbox_backend)
 
         t0 = time.monotonic()
-        run_counselors(
-            prompt_file=prompt_file,
-            agents=[agent],
-            output_dir=session_out_dir,
-            verbose=config.verbose,
+        result = _run_agent(
+            executor, sandbox, agent,
+            prompt_text, f"phase2/{session_key}", config.verbose,
         )
 
-        _normalize_counselors_output(session_out_dir, [agent], suffix=".md")
-        agent_out = session_out_dir / f"{agent}.md"
+        # Write refined report to canonical path
         final_out = phase2_dir / f"{session_key}.md"
-        if agent_out.exists() and not final_out.exists():
-            shutil.copy2(agent_out, final_out)
+        final_out.write_text(result.raw_output)
 
         elapsed = time.monotonic() - t0
         return session_key, elapsed
@@ -447,9 +499,9 @@ class CouncilStrategy:
                 for agent in config.agents
             }
 
-            with ThreadPoolExecutor() as executor:
+            with ThreadPoolExecutor() as pool:
                 futures = {
-                    executor.submit(
+                    pool.submit(
                         self._run_single_refinement, run_dir, config, agent
                     ): agent
                     for agent in config.agents
@@ -511,31 +563,32 @@ class CouncilStrategy:
         prompt_text = build_synthesis_prompt(
             config.topic, len(config.agents), all_reports
         )
-        prompt_file = run_dir / "phase3" / "synthesis-prompt.md"
+        prompt_file = phase3_dir / "synthesis-prompt.md"
         prompt_file.write_text(prompt_text)
+
+        sandbox_backend = getattr(config, "sandbox_backend", "none")
+        run_id = manifest.run_id
+
+        executor = _get_executor(config.synthesizer)
+        sandbox = _create_sandbox(run_dir, config.synthesizer, run_id, sandbox_backend)
 
         t0 = time.monotonic()
         with phase_spinner(f"Synthesizer [agent]{config.synthesizer}[/agent] working..."):
-            run_counselors(
-                prompt_file=prompt_file,
-                agents=[config.synthesizer],
-                output_dir=phase3_dir,
-                verbose=config.verbose,
+            result = _run_agent(
+                executor, sandbox, config.synthesizer,
+                prompt_text, "phase3", config.verbose,
             )
 
-        _normalize_counselors_output(phase3_dir, [config.synthesizer], suffix=".md")
-        synth_out = phase3_dir / f"{config.synthesizer}.md"
+        # Write final report from agent output
         final_report = phase3_dir / "final-report.md"
-        if synth_out.exists() and not final_report.exists():
-            shutil.copy2(synth_out, final_report)
+        final_report.write_text(result.raw_output)
 
         elapsed = time.monotonic() - t0
         sp.status = PhaseStatus.COMPLETE
         sp.completed_at = _now_iso()
         sp.duration_seconds = elapsed
 
-        final_path = phase3_dir / "final-report.md"
-        report_size = final_path.stat().st_size if final_path.exists() else 0
+        report_size = len(result.raw_output)
         logger.info(
             fmt_ok("Phase 3 complete [duration](%s)[/duration] -- final report: %d bytes"),
             fmt_duration(elapsed), report_size,
