@@ -1105,6 +1105,18 @@ class AdversarialStrategy:
                         if texts:
                             asi["critique"] = "\n\n".join(texts)
 
+                # Inject 'scores' key for GEPA Pareto frontier tracking.
+                # GEPA recognizes asi["scores"] as a dict of named objectives
+                # for multi-objective optimization.  Without this, GEPA only
+                # sees the single aggregate float and degenerates to
+                # single-dimensional hill climbing.
+                dimensions = asi.get("dimensions", {})
+                if dimensions and isinstance(dimensions, dict):
+                    asi["scores"] = {k: float(v) for k, v in dimensions.items()
+                                     if isinstance(v, (int, float))}
+                else:
+                    asi["scores"] = {}
+
                 # Track seed score on first round
                 if round_num == 1:
                     seed_result.seed_score = score

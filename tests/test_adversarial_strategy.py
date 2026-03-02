@@ -850,6 +850,125 @@ class TestAdversarialEvaluatorAndProposer:
         assert len(prompt_texts) >= 4  # seed gen + judge + improve + synthesis (minimum)
 
 
+class TestEvaluatorParetoScores:
+    """Gap 1: evaluator ASI must include 'scores' key for GEPA Pareto tracking."""
+
+    def _setup_run_dir(self, tmp_path):
+        run_dir = tmp_path / "run-adv-001"
+        for d in ("phase1", "phase2", "phase3"):
+            (run_dir / d).mkdir(parents=True, exist_ok=True)
+        return run_dir
+
+    @patch("ivory_tower.strategies.adversarial.run_counselors")
+    def test_evaluator_asi_contains_scores_key(self, mock_counselors, tmp_path):
+        """Evaluator should include asi['scores'] mirroring dimension scores."""
+        s = AdversarialStrategy()
+        config = _make_config(output_dir=tmp_path, max_rounds=1)
+        m = _make_adversarial_manifest(config)
+        run_dir = self._setup_run_dir(tmp_path)
+
+        judge_data = {
+            "overall_score": 7.0,
+            "dimensions": {
+                "factual_accuracy": 8,
+                "depth_of_analysis": 7,
+                "source_quality": 6,
+                "coverage_breadth": 7,
+                "analytical_rigor": 7,
+            },
+            "strengths": ["good"],
+            "weaknesses": ["needs work"],
+            "suggestions": ["improve"],
+            "critique": "decent report",
+        }
+
+        def tracking_counselors(prompt_file, agents, output_dir, verbose=False):
+            slug = output_dir / "slug-001"
+            slug.mkdir(parents=True, exist_ok=True)
+            for agent in agents:
+                (slug / f"{agent}.md").write_text(json.dumps(judge_data))
+            return MagicMock(returncode=0)
+
+        mock_counselors.side_effect = tracking_counselors
+
+        gepa_mod, gepa_oa = _fake_gepa_modules()
+        evaluator_tracker = []
+
+        def fake_optimize(seed_candidate, *, evaluator, objective=None, config=None, **kw):
+            score, asi = evaluator(seed_candidate)
+            evaluator_tracker.append({"score": score, "asi": asi})
+            proposer_fn = config.reflection.custom_candidate_proposer
+            improved = proposer_fn(seed_candidate, {}, [])
+            return _make_optimize_result(improved, best_score=score)
+
+        gepa_oa.optimize_anything = MagicMock(side_effect=fake_optimize)
+
+        with _patch_gepa_import(gepa_mod, gepa_oa):
+            s.run(run_dir, config, m)
+
+        assert len(evaluator_tracker) >= 2
+        for entry in evaluator_tracker:
+            asi = entry["asi"]
+            # Must have 'scores' key for GEPA Pareto tracking
+            assert "scores" in asi, "ASI must include 'scores' key for GEPA Pareto frontiers"
+            scores = asi["scores"]
+            # Scores should mirror dimension values as floats
+            assert "factual_accuracy" in scores
+            assert "depth_of_analysis" in scores
+            assert "source_quality" in scores
+            assert "coverage_breadth" in scores
+            assert "analytical_rigor" in scores
+            # Values should be numeric floats
+            for dim, val in scores.items():
+                assert isinstance(val, float), f"scores[{dim!r}] should be float, got {type(val)}"
+
+    @patch("ivory_tower.strategies.adversarial.run_counselors")
+    def test_evaluator_scores_empty_when_no_dimensions(self, mock_counselors, tmp_path):
+        """When judge returns no dimensions, scores should still be present but empty."""
+        s = AdversarialStrategy()
+        config = _make_config(output_dir=tmp_path, max_rounds=1)
+        m = _make_adversarial_manifest(config)
+        run_dir = self._setup_run_dir(tmp_path)
+
+        judge_data = {
+            "overall_score": 5.0,
+            "dimensions": {},
+            "strengths": [],
+            "weaknesses": [],
+            "suggestions": [],
+            "critique": "ok",
+        }
+
+        def tracking_counselors(prompt_file, agents, output_dir, verbose=False):
+            slug = output_dir / "slug-001"
+            slug.mkdir(parents=True, exist_ok=True)
+            for agent in agents:
+                (slug / f"{agent}.md").write_text(json.dumps(judge_data))
+            return MagicMock(returncode=0)
+
+        mock_counselors.side_effect = tracking_counselors
+
+        gepa_mod, gepa_oa = _fake_gepa_modules()
+        evaluator_tracker = []
+
+        def fake_optimize(seed_candidate, *, evaluator, objective=None, config=None, **kw):
+            score, asi = evaluator(seed_candidate)
+            evaluator_tracker.append({"score": score, "asi": asi})
+            proposer_fn = config.reflection.custom_candidate_proposer
+            improved = proposer_fn(seed_candidate, {}, [])
+            return _make_optimize_result(improved, best_score=score)
+
+        gepa_oa.optimize_anything = MagicMock(side_effect=fake_optimize)
+
+        with _patch_gepa_import(gepa_mod, gepa_oa):
+            s.run(run_dir, config, m)
+
+        for entry in evaluator_tracker:
+            asi = entry["asi"]
+            assert "scores" in asi
+            assert asi["scores"] == {}
+
+
 class TestAdversarialRegistration:
     """Tests that AdversarialStrategy is properly registered."""
 
