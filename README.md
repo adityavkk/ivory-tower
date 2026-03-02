@@ -4,7 +4,7 @@ Multi-agent deep research from the terminal.
 
 Orchestrates [counselors](https://github.com/anomalyco/counselors) agents to research a topic in parallel, challenge each other's work, and synthesize a final report.
 
-Ships two strategies: **council** and **adversarial**. More planned (debate, map-reduce, red-blue).
+Five strategies. **Council** and **adversarial** are battle-tested. **Debate**, **map-reduce**, and **red-blue** are implemented via the YAML template engine but not yet live-tested.
 
 #### Council
 
@@ -101,11 +101,13 @@ cat topic.md | ivory research -a claude-opus,codex-5.3-xhigh -s claude-opus
 
 | Strategy | Agents | Status | Description |
 |----------|--------|--------|-------------|
-| **council** | 2+ | implemented | Independent research, skeptical cross-review, synthesis |
-| **adversarial** | 2 | implemented | Iterative optimization scored by opposing agent via [GEPA](https://github.com/anomalyco/gepa) |
-| **debate** | 2-6 | planned | Turn-based argumentation with shared blackboard transcript |
-| **map-reduce** | 2-20 | planned | Decompose topic into subtopics, one agent per subtopic, merge |
-| **red-blue** | 3-10 | planned | Red team critiques, blue team defends, synthesizer reconciles |
+| **council** | 2+ | stable | Independent research, skeptical cross-review, synthesis |
+| **adversarial** | 2 | stable | Iterative optimization scored by opposing agent via [GEPA](https://github.com/anomalyco/gepa) |
+| **debate** | 2-6 | alpha | Turn-based argumentation with shared blackboard transcript |
+| **map-reduce** | 2-20 | alpha | Decompose topic into subtopics, one agent per subtopic, merge |
+| **red-blue** | 3-10 | alpha | Red team critiques, blue team defends, synthesizer reconciles |
+
+> Council and adversarial have custom Python implementations and have been live-tested. Debate, map-reduce, and red-blue run through the `GenericTemplateExecutor` (YAML-driven) and have unit/integration tests but no live runs yet.
 
 Strategies are defined as YAML templates. Drop a `.yml` in `~/.ivory-tower/strategies/` to create your own, or pass `--template path/to/strategy.yml`.
 
@@ -166,18 +168,20 @@ ivory profiles           # list all profiles
 
 ### Sandboxing
 
-Agents can run in isolated environments. Four backends:
+Agent isolation for template-based strategies (debate, map-reduce, red-blue). Four backends:
 
-| Backend | Description |
-|---------|-------------|
-| `none` | No isolation (default) |
-| `local` | Directory-based isolation per agent |
-| `agentfs` | SQLite copy-on-write filesystem with encryption and audit trail |
-| `daytona` | Full Docker container isolation with resource limits |
+| Backend | Requires | Description |
+|---------|----------|-------------|
+| `none` | nothing | No isolation (default) |
+| `local` | nothing | Directory-based isolation per agent |
+| `agentfs` | [agentfs](https://agentfs.ai) CLI | SQLite copy-on-write filesystem with encryption and audit trail |
+| `daytona` | [daytona](https://daytona.io) SDK | Full Docker container isolation with resource limits |
 
 ```bash
-ivory research "topic" -a claude-opus,codex -s claude-opus --sandbox local
+ivory research "topic" --template debate -a a,b,c -s a --sandbox local
 ```
+
+> Sandbox support is wired into the template executor used by debate, map-reduce, and red-blue. Council and adversarial use direct filesystem paths and currently ignore `--sandbox`.
 
 ### Output
 
