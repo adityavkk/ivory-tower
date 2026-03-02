@@ -4,12 +4,58 @@ Multi-agent deep research from the terminal.
 
 Orchestrates [counselors](https://github.com/anomalyco/counselors) agents to research a topic in parallel, challenge each other's work, and synthesize a final report.
 
+```mermaid
+graph LR
+    subgraph council
+        direction LR
+        C1[research] --> C2[cross-review] --> C3[synthesize]
+    end
+
+    subgraph adversarial
+        direction LR
+        A1[seed] --> A2["optimize (2× GEPA loops)"] --> A3[synthesize]
+    end
+
+    subgraph debate
+        direction LR
+        D1[opening] --> D2["rounds (blackboard)"] --> D3[closing] --> D4[verdict]
+    end
+
+    subgraph map-reduce
+        direction LR
+        M1[decompose] --> M2[map · 1 agent/subtopic] --> M3[reduce]
+    end
+
+    subgraph red-blue
+        direction LR
+        R1[blue research] --> R2[red critique] --> R3[blue defend] --> R4[synthesize]
+    end
 ```
-council:       research ──► cross-review ──► synthesize
-adversarial:   seed ──► optimize (GEPA loop) ──► synthesize
-debate:        opening ──► rounds (blackboard) ──► closing ──► verdict
-map-reduce:    decompose ──► map (1 agent/subtopic) ──► reduce
-red-blue:      blue research ──► red critique ──► blue defend ──► synthesize
+
+The **adversarial** strategy runs two parallel [GEPA](https://github.com/anomalyco/gepa) optimization loops -- each agent's report is iteratively improved while the opposing agent scores it:
+
+```mermaid
+graph TD
+    T((Topic)) --> A1[Agent A researches] & B1[Agent B researches]
+
+    subgraph "GEPA Loop A"
+        A1 --> SA[Seed Report A]
+        SA --> JA{Agent B judges}
+        JA -- feedback --> IA[Agent A improves]
+        IA --> JA
+    end
+
+    subgraph "GEPA Loop B"
+        B1 --> SB[Seed Report B]
+        SB --> JB{Agent A judges}
+        JB -- feedback --> IB[Agent B improves]
+        IB --> JB
+    end
+
+    JA -. best .-> OA[Optimized A]
+    JB -. best .-> OB[Optimized B]
+    OA & OB --> SYN[Synthesizer]
+    SYN --> FR((Final Report))
 ```
 
 ---
