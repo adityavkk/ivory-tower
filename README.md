@@ -197,6 +197,104 @@ Each run produces a self-contained directory:
     phase3/final-report.md # synthesized report
 ```
 
+### Logging
+
+All pipeline output flows through a single logging system built on Python's `logging` module with [Rich](https://github.com/Textualize/rich) rendering. Call `setup_logging()` once at CLI startup; every module then uses `logging.getLogger(__name__)`.
+
+#### Architecture
+
+```
+src/ivory_tower/log.py          # shared console, symbols, formatters, spinners
+    console                     # Rich Console(theme=_THEME, stderr=True)
+    setup_logging()             # configures root logger with RichHandler
+    fmt_phase / fmt_ok / ...    # markup formatters
+    phase_spinner()             # context-manager spinner with auto-duration
+    create_agent_progress()     # multi-agent progress bar
+```
+
+All logging goes to stderr via the shared themed `Console`. The `RichHandler` renders timestamps, levels, and Rich markup automatically. Third-party loggers (httpx, openai, anthropic, etc.) are quietened to WARNING.
+
+#### Visual Language
+
+Every strategy follows the same visual pattern:
+
+```
+[HH:MM:SS] INFO  ▶ Research Pipeline                    # engine header
+[HH:MM:SS] INFO    ▸ Strategy: council
+[HH:MM:SS] INFO    ▸ Agents: agent-a, agent-b
+[HH:MM:SS] INFO    ▸ Synthesizer: synth
+[HH:MM:SS] INFO    ▸ Topic: "..."
+[HH:MM:SS] INFO    ▸ Run ID: 20260301-...
+
+[HH:MM:SS] INFO  ▶ Phase 1 -- Independent Research      # phase header
+[HH:MM:SS] INFO    ▸ Agents: agent-a, agent-b
+              ▸ Agents researching: agent-a, agent-b     # animated spinner
+              ✔ Agents researching: agent-a, agent-b (45.2s)
+[HH:MM:SS] INFO    ▸ Counselors session complete, normalizing output
+[HH:MM:SS] INFO  ✔ Phase 1 complete (45.2s)             # phase footer
+
+[HH:MM:SS] INFO  ▶ Phase 2 -- Cross-Pollination
+[HH:MM:SS] INFO    ▸ 2 agents refining reports concurrently
+              agent-a refining... ████████████ 0:00:32   # progress bar
+              ✔ agent-a refined (32.1s)
+              ✔ agent-b refined (28.7s)
+[HH:MM:SS] INFO  ✔ Phase 2 complete (32.1s)
+
+[HH:MM:SS] INFO  ▶ Phase 3 -- Synthesis
+[HH:MM:SS] INFO    ▸ Synthesizer: synth combining 2 refined reports
+              ▸ Synthesizer synth working...
+              ✔ Synthesizer synth working... (18.0s)
+[HH:MM:SS] INFO  ✔ Phase 3 complete (18.0s) -- final report: 14832 bytes
+
+[HH:MM:SS] INFO  ✔ Council pipeline complete (1m 35s)   # pipeline footer
+```
+
+#### Per-Strategy Logging
+
+| Strategy | Pipeline Header | Phase Headers | Step Detail | Spinners/Progress | Phase Footers | Pipeline Footer |
+|----------|----------------|---------------|-------------|-------------------|---------------|-----------------|
+| **council** | `run()` | Each `_run_phase{1,2,3}` | Agent lists, normalization | `phase_spinner`, `create_agent_progress` | Duration per phase | Duration total |
+| **adversarial** | `_run_adversarial_optimization` | Each `_run_*` method | Per-round scores, feedback, optimization progress | `phase_spinner` per judge/improve/optimize | Duration per phase | Duration total |
+| **debate** | `run()` | `GenericTemplateExecutor` per phase | Agent lists, isolation mode, round counts | `phase_spinner` per agent turn | Duration per phase | Duration total |
+| **map-reduce** | `run()` | `GenericTemplateExecutor` per phase | Agent lists, isolation mode, concurrency | `phase_spinner` for single-agent phases | Duration per phase | Duration total |
+| **red-blue** | `run()` | `GenericTemplateExecutor` per phase | Team assignments, isolation mode | `phase_spinner` per agent turn | Duration per phase | Duration total |
+
+Council and adversarial have custom Python logging at each step. Debate, map-reduce, and red-blue delegate phase execution to `GenericTemplateExecutor`, which logs phase headers/footers, round progress, agent dispatch, and timing for every phase defined in their YAML templates.
+
+#### Log Levels
+
+- `INFO` -- phase boundaries, scores, timing, completion messages. Visible by default.
+- `DEBUG` -- JSON extraction strategies, proposer/evaluator internals, round-level file paths. Enable with `--verbose` / `-v`.
+- `WARNING` -- parse failures, score 0.0 warnings, missing agent output, fallback paths.
+- `ERROR` -- optimization failures with full tracebacks (when verbose).
+
+#### Symbols
+
+| Symbol | Name | Usage |
+|--------|------|-------|
+| `▶` | `SYM_PHASE` | Phase headers |
+| `✔` | `SYM_OK` | Success / completion |
+| `✘` | `SYM_FAIL` | Failure |
+| `▸` | `SYM_ARROW` | Bullet / step detail |
+| `★` | `SYM_SCORE` | Score display |
+| `⟳` | `SYM_ROUND` | Round markers |
+| `✦` | `SYM_SPARK` | Highlights |
+
+#### Theme
+
+Rich markup tags used in log messages:
+
+| Tag | Style | Usage |
+|-----|-------|-------|
+| `[phase]` | bold cyan | Phase names, strategy headers |
+| `[agent]` | bold magenta | Agent names |
+| `[score]` | bold yellow | Scores, ratings |
+| `[ok]` | bold green | Success markers |
+| `[warn]` | bold yellow | Warnings |
+| `[fail]` | bold red | Failures |
+| `[dim]` | dim | Secondary info (run IDs, paths, topic previews) |
+| `[duration]` | cyan | Timing values |
+
 ### Requirements
 
 - Python 3.12+
