@@ -919,6 +919,10 @@ class TestGEPAConfigFrontierType:
             assert cfg.engine.frontier_type == "objective", (
                 f"Expected frontier_type='objective', got {cfg.engine.frontier_type!r}"
             )
+            # max_rounds=1 → 1 seed eval + 1 iteration * 3 calls = 4
+            assert cfg.engine.max_metric_calls == 1 + 1 * 3, (
+                f"Expected max_metric_calls=4, got {cfg.engine.max_metric_calls}"
+            )
 
 
 class TestProposerFeedbackHistory:

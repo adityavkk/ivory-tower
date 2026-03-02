@@ -1,0 +1,9 @@
+
+> build · claude-haiku-4-5-20251001
+
+→ Read research/20260302-083944-8642c7/phase1/20260302-083944-8642c7/prompt.md
+% WebFetch https://en.wikipedia.org/wiki/WebSocket
+% WebFetch https://html.spec.whatwg.org/multipage/server-sent-events.html
+% WebFetch https://www.w3.org/TR/eventsource/
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/WebSocket
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events

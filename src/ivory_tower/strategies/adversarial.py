@@ -1268,11 +1268,17 @@ class AdversarialStrategy:
             def _unused_lm(prompt):  # pragma: no cover
                 raise RuntimeError("reflection_lm should never be called when custom_candidate_proposer is set")
 
+            # GEPA's metric budget: 1 seed evaluation + up to 3 calls per
+            # improvement iteration (subsample of current, subsample of
+            # proposed, full valset if accepted).  Budget for the worst
+            # case (all proposals accepted) so max_rounds genuinely means
+            # the number of proposer invocations the user asked for.
+            _GEPA_CALLS_PER_ITERATION = 3
+            metric_budget = 1 + max_rounds * _GEPA_CALLS_PER_ITERATION
+
             gepa_config = GEPAConfig(
                 engine=EngineConfig(
-                    # +1 because GEPA uses one metric call to evaluate the
-                    # seed before any improvement rounds begin.
-                    max_metric_calls=max_rounds + 1,
+                    max_metric_calls=metric_budget,
                     raise_on_exception=False,
                     # Enable per-dimension Pareto tracking.  With 'objective',
                     # GEPA maintains a frontier entry per named score so

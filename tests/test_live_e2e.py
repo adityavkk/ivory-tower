@@ -239,7 +239,7 @@ class TestAdversarialLiveE2E:
             assert isinstance(seed.dimension_history, list), (
                 f"{agent} dimension_history is not a list"
             )
-            # With max_rounds=3, GEPA makes up to 4 evaluator calls (1 seed + 3 rounds)
+            # With max_rounds=3, metric_budget=10: 1 seed + up to 3 iterations * 3 calls
             assert len(seed.dimension_history) >= 1, (
                 f"{agent} dimension_history is empty -- evaluator didn't record rounds"
             )
@@ -266,7 +266,7 @@ class TestAdversarialLiveE2E:
                     )
 
     def test_dimension_history_shows_score_movement(self, run_dir: Path):
-        """With max_rounds=3 and non-zero scores, we should see multiple rounds."""
+        """With max_rounds=3 (metric_budget=10), we should see multiple rounds."""
         m = Manifest.load(run_dir / "manifest.json")
         opt_phase = m.phases["adversarial_optimization"]
         any_multi_round = False
@@ -289,8 +289,8 @@ class TestAdversarialLiveE2E:
         phase2 = run_dir / "phase2"
         for agent in (AGENT_A, AGENT_B):
             improve_dirs = sorted(phase2.glob(f"{agent}-improve-round-*"))
-            # With max_rounds=3 we expect at least 1 improvement round
-            # (GEPA uses 1 call for seed eval, leaving up to 3 for improvement)
+            # With max_rounds=3 (metric_budget=10) we expect multiple improvement
+            # rounds.  Each iteration costs 2-3 metric calls.
             if not improve_dirs:
                 # If no improvement dirs, check if this agent had non-zero seed score
                 # (agents with 0.0 seed may not get improvement rounds)
@@ -308,12 +308,11 @@ class TestAdversarialLiveE2E:
     def test_improvement_prompt_has_trajectory(self, run_dir: Path):
         """Second and later improvement prompts should contain a Score Trajectory.
 
-        Each GEPA iteration uses ~2 evaluator calls (subsample + full valset),
-        so max_rounds=3 (4 metric calls) typically produces only 1 proposer
-        call per agent.  The trajectory feature requires 2+ proposer calls.
-        This test may skip at max_rounds=3; it becomes reliable at max_rounds>=5.
-        The trajectory logic itself is verified by the unit test
-        ``TestProposerFeedbackHistory::test_improvement_prompt_contains_score_trajectory``.
+        With the corrected metric budget (1 + max_rounds * 3), max_rounds=3
+        gives 10 metric calls -- enough for 3 GEPA iterations, meaning up to
+        3 proposer calls.  The second proposer call should include trajectory
+        data from the first round.  May still skip if GEPA exhausts its budget
+        early due to accept/reject dynamics.
         """
         phase2 = run_dir / "phase2"
         found_trajectory = False
