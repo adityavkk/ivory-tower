@@ -966,16 +966,37 @@ class AdversarialStrategy:
 
         t0 = time.monotonic()
         agents_label = ", ".join(config.agents)
-        with phase_spinner(f"Agents researching: [agent]{agents_label}[/agent]"):
-            run_counselors(
-                prompt_file=prompt_file,
-                agents=config.agents,
-                output_dir=phase1_dir,
-                verbose=config.verbose,
-            )
 
-        # Normalize: <slug>/<agent>.md -> <agent>-seed.md
-        _normalize_counselors_output(phase1_dir, config.agents, suffix="-seed.md")
+        if getattr(config, "executor", "counselors") == "direct":
+            # Direct LLM mode: call litellm for each agent
+            from ivory_tower.strategies.direct_llm import _llm_completion
+
+            for agent in config.agents:
+                with phase_spinner(f"[direct] {fmt_agent(agent)} researching..."):
+                    seed_text = _llm_completion(
+                        model=config.model,
+                        prompt=prompt_text,
+                        api_base=config.api_base,
+                        max_tokens=16384,
+                        temperature=0.4,
+                    )
+                seed_file = phase1_dir / f"{agent}-seed.md"
+                seed_file.write_text(seed_text)
+                logger.info(
+                    fmt_ok("[direct] %s seed: %d chars"),
+                    fmt_agent(agent), len(seed_text),
+                )
+        else:
+            with phase_spinner(f"Agents researching: [agent]{agents_label}[/agent]"):
+                run_counselors(
+                    prompt_file=prompt_file,
+                    agents=config.agents,
+                    output_dir=phase1_dir,
+                    verbose=config.verbose,
+                )
+
+            # Normalize: <slug>/<agent>.md -> <agent>-seed.md
+            _normalize_counselors_output(phase1_dir, config.agents, suffix="-seed.md")
 
         elapsed = time.monotonic() - t0
         sg.status = PhaseStatus.COMPLETE
@@ -1044,6 +1065,111 @@ class AdversarialStrategy:
             seed_result.status = PhaseStatus.RUNNING
 
             round_counter = [0]
+            feedback_history: list[dict] = []
+
+            # -- Direct LLM mode: use litellm instead of counselors --
+            if config.executor == "direct":
+                from ivory_tower.strategies.direct_llm import (
+                    make_direct_evaluator,
+                    make_direct_proposer,
+                )
+
+                direct_eval = make_direct_evaluator(
+                    agent=agent,
+                    judge=judge,
+                    model=config.model,
+                    api_base=config.api_base,
+                    topic=config.topic,
+                    judging_dir=judging_dir,
+                    round_counter=round_counter,
+                    seed_result=seed_result,
+                    build_judging_prompt=build_judging_prompt,
+                )
+                direct_prop = make_direct_proposer(
+                    agent=agent,
+                    judge=judge,
+                    model=config.model,
+                    api_base=config.api_base,
+                    topic=config.topic,
+                    judging_dir=judging_dir,
+                    phase2_dir=phase2_dir,
+                    seed_result=seed_result,
+                    feedback_history=feedback_history,
+                    config=config,
+                    build_judging_prompt=build_judging_prompt,
+                    build_improvement_prompt=build_improvement_prompt,
+                )
+
+                _GEPA_CALLS_PER_ITERATION = 3
+                metric_budget = 1 + max_rounds * _GEPA_CALLS_PER_ITERATION
+
+                def _unused_lm(prompt):  # pragma: no cover
+                    raise RuntimeError("reflection_lm not used with direct executor")
+
+                gepa_config = GEPAConfig(
+                    engine=EngineConfig(
+                        max_metric_calls=metric_budget,
+                        raise_on_exception=False,
+                        frontier_type="objective",
+                    ),
+                    reflection=ReflectionConfig(
+                        custom_candidate_proposer=direct_prop,
+                        reflection_lm=_unused_lm,
+                    ),
+                )
+
+                try:
+                    with phase_spinner(f"Optimizing {fmt_agent(agent)} [direct]..."):
+                        result = optimize_anything(
+                            seed_candidate={"report": seed_text},
+                            evaluator=direct_eval,
+                            objective=(
+                                "Optimize this research report for accuracy, depth, "
+                                "coverage, source quality, and analytical rigor"
+                            ),
+                            config=gepa_config,
+                        )
+
+                    best = result.best_candidate
+                    if isinstance(best, dict):
+                        optimized_text = best.get("report", seed_text)
+                    elif isinstance(best, str):
+                        optimized_text = best
+                    else:
+                        optimized_text = seed_text
+                    optimized_file = phase2_dir / f"{agent}-optimized.md"
+                    optimized_file.write_text(optimized_text)
+
+                    best_score = result.val_aggregate_scores[result.best_idx] if result.val_aggregate_scores else None
+                    seed_result.final_score = best_score
+                    seed_result.status = PhaseStatus.COMPLETE
+
+                    seed_score = seed_result.seed_score or 0.0
+                    final_score = best_score if best_score is not None else 0.0
+                    logger.info(
+                        fmt_ok("%s optimization done [direct]: [score]%s[/score] -> [score]%s[/score]"),
+                        fmt_agent(agent),
+                        fmt_score(seed_score),
+                        fmt_score(final_score),
+                    )
+                    self._save_optimization_log(
+                        run_dir, agent, result,
+                        dimension_history=seed_result.dimension_history,
+                    )
+
+                    if best_score is not None and seed_result.seed_score is not None:
+                        if best_score <= seed_result.seed_score:
+                            logger.warning(
+                                "[%s] No improvement: seed=%.1f final=%.1f",
+                                agent, seed_result.seed_score, best_score,
+                            )
+
+                except Exception:
+                    logger.exception("GEPA optimization failed for %s [direct]", agent)
+                    seed_result.status = PhaseStatus.FAILED
+
+                return
+            # -- End direct LLM mode --
 
             def evaluator(candidate: dict) -> tuple[float, dict]:
                 """Send candidate to opposing agent for judging."""
@@ -1140,10 +1266,6 @@ class AdversarialStrategy:
                     logger.warning("[%s] Round %d returned score 0.0 -- judge output may have failed to parse", agent, round_num)
 
                 return score, asi
-
-            # Accumulate feedback history across rounds for trajectory tracking.
-            # Each entry: {"round": N, "score": float, "dimensions": dict}.
-            feedback_history: list[dict] = []
 
             def proposer(
                 candidate: dict,
@@ -1446,16 +1568,30 @@ class AdversarialStrategy:
         prompt_file.write_text(prompt_text)
 
         t0 = time.monotonic()
-        with phase_spinner(f"Synthesizer [agent]{config.synthesizer}[/agent] working..."):
-            run_counselors(
-                prompt_file=prompt_file,
-                agents=[config.synthesizer],
-                output_dir=phase3_dir,
-                verbose=config.verbose,
-            )
+        if getattr(config, "executor", "counselors") == "direct":
+            from ivory_tower.strategies.direct_llm import _llm_completion
 
-        _normalize_counselors_output(phase3_dir, [config.synthesizer], suffix=".md")
-        synth_out = phase3_dir / f"{config.synthesizer}.md"
+            with phase_spinner(f"[direct] Synthesizer working..."):
+                synth_text = _llm_completion(
+                    model=config.model,
+                    prompt=prompt_text,
+                    api_base=config.api_base,
+                    max_tokens=16384,
+                    temperature=0.3,
+                )
+            synth_out = phase3_dir / f"{config.synthesizer}.md"
+            synth_out.write_text(synth_text)
+        else:
+            with phase_spinner(f"Synthesizer [agent]{config.synthesizer}[/agent] working..."):
+                run_counselors(
+                    prompt_file=prompt_file,
+                    agents=[config.synthesizer],
+                    output_dir=phase3_dir,
+                    verbose=config.verbose,
+                )
+
+            _normalize_counselors_output(phase3_dir, [config.synthesizer], suffix=".md")
+            synth_out = phase3_dir / f"{config.synthesizer}.md"
         final_report = phase3_dir / "final-report.md"
         if synth_out.exists() and not final_report.exists():
             shutil.copy2(synth_out, final_report)

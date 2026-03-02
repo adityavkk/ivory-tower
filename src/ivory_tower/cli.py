@@ -107,6 +107,18 @@ def research(
         Optional[str],
         typer.Option("--blue-team", help="Comma-separated agent specs for blue team"),
     ] = None,
+    executor: Annotated[
+        str,
+        typer.Option("--executor", help="Agent executor: counselors (default) or direct (litellm)"),
+    ] = "counselors",
+    model: Annotated[
+        Optional[str],
+        typer.Option("--model", help="LLM model ID for direct executor (e.g. openai/claude-sonnet-4)"),
+    ] = None,
+    api_base: Annotated[
+        Optional[str],
+        typer.Option("--api-base", help="API base URL for direct executor (e.g. http://127.0.0.1:8112/v1)"),
+    ] = None,
 ) -> None:
     """Run a multi-agent deep research pipeline on a topic."""
     # -- sandbox validation --
@@ -173,32 +185,63 @@ def research(
         typer.echo("Error: no topic provided. Pass as argument, --file, or pipe to stdin.", err=True)
         raise typer.Exit(code=1)
 
-    # -- check counselors --
-    try:
-        resolve_counselors_cmd()
-    except CounselorsError as exc:
-        typer.echo(f"Error: {exc}", err=True)
+    # -- executor validation --
+    if executor not in ("counselors", "direct"):
+        typer.echo(
+            f"Unknown executor '{executor}'. Available: counselors, direct",
+            err=True,
+        )
         raise typer.Exit(code=1)
+    if executor == "direct":
+        try:
+            import litellm  # noqa: F401
+        except ImportError:
+            typer.echo(
+                "Error: direct executor requires litellm. Install: uv pip install 'ivory-tower[direct]'",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        if model is None:
+            typer.echo(
+                "Error: --model is required when using --executor direct "
+                "(e.g. --model openai/claude-sonnet-4)",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+
+    # -- check counselors (skip for direct executor) --
+    if executor == "counselors":
+        try:
+            resolve_counselors_cmd()
+        except CounselorsError as exc:
+            typer.echo(f"Error: {exc}", err=True)
+            raise typer.Exit(code=1)
 
     # -- parse agent specs (support @profile-name, model:role, model) --
     agent_specs = [a.strip() for a in agents.split(",")]
     agent_list = []
     for spec in agent_specs:
-        profile = AgentProfile.from_cli_shorthand(spec)
-        agent_list.append(profile.model or profile.name)
+        if executor == "direct":
+            # Direct executor: agent names are labels, not counselors IDs
+            agent_list.append(spec)
+        else:
+            profile = AgentProfile.from_cli_shorthand(spec)
+            agent_list.append(profile.model or profile.name)
 
-    all_agents = agent_list + [synthesizer]
-    if parse_agent is not None:
-        all_agents.append(parse_agent)
-    available = list_available_agents()
-    invalid = validate_agents(all_agents, available)
-    if invalid:
-        typer.echo(
-            f"Error: unknown agents: {', '.join(invalid)}\n"
-            f"Available: {', '.join(available)}",
-            err=True,
-        )
-        raise typer.Exit(code=1)
+    # Validate agents against counselors (skip for direct executor)
+    if executor == "counselors":
+        all_agents = agent_list + [synthesizer]
+        if parse_agent is not None:
+            all_agents.append(parse_agent)
+        available = list_available_agents()
+        invalid = validate_agents(all_agents, available)
+        if invalid:
+            typer.echo(
+                f"Error: unknown agents: {', '.join(invalid)}\n"
+                f"Available: {', '.join(available)}",
+                err=True,
+            )
+            raise typer.Exit(code=1)
 
     # Configure logging
     setup_logging(verbose=verbose)
@@ -237,6 +280,9 @@ def research(
         rounds=rounds,
         red_team=parsed_red_team,
         blue_team=parsed_blue_team,
+        executor=executor,
+        model=model,
+        api_base=api_base,
     )
 
     if dry_run:
