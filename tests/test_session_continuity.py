@@ -166,3 +166,66 @@ class TestSessionCleanup:
         """Closing a non-existent session doesn't raise."""
         executor = ACPExecutor()
         executor.close_session("no-such-session")  # Should not raise
+
+
+# ---------------------------------------------------------------------------
+# Council session reuse tests
+# ---------------------------------------------------------------------------
+
+
+class TestCouncilSessionReuse:
+    """Verify council strategy passes session_id from Phase 1 to Phase 2."""
+
+    @patch("ivory_tower.strategies.council._create_sandbox")
+    @patch("ivory_tower.strategies.council._get_executor")
+    @patch("ivory_tower.strategies.council._run_agent")
+    def test_phase2_receives_session_id_from_phase1(
+        self, mock_run, mock_exec, mock_sandbox, tmp_path,
+    ):
+        """Phase 2 _run_agent calls include session_id from Phase 1 results."""
+        from ivory_tower.executor.types import AgentOutput
+        from ivory_tower.strategies.council import CouncilStrategy
+        from ivory_tower.engine import RunConfig
+
+        # Phase 1 returns session_ids in metadata
+        call_count = [0]
+        def fake_run_agent(executor, sandbox, agent_name, prompt, output_dir, verbose=False, **kwargs):
+            call_count[0] += 1
+            return AgentOutput(
+                report_path=f"{output_dir}/{agent_name}-report.md",
+                raw_output=f"Report by {agent_name}",
+                duration_seconds=1.0,
+                metadata={"session_id": f"session-{agent_name}", "protocol": "acp"},
+            )
+
+        mock_run.side_effect = fake_run_agent
+        mock_exec.return_value = MagicMock()
+        mock_sandbox.return_value = MagicMock(workspace_dir=tmp_path)
+
+        strat = CouncilStrategy()
+        config = RunConfig(
+            topic="Session test",
+            agents=["agent-a", "agent-b"],
+            synthesizer="agent-a",
+            output_dir=tmp_path,
+        )
+        manifest = strat.create_manifest(config, "run-session-test")
+
+        run_dir = tmp_path / "run-session-test"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        for d in ("phase1", "phase2", "phase3"):
+            (run_dir / d).mkdir(parents=True, exist_ok=True)
+
+        strat.run(run_dir, config, manifest)
+
+        # Check that Phase 2 calls include session_id kwargs
+        phase2_calls = [
+            c for c in mock_run.call_args_list
+            if "phase2" in str(c)
+        ]
+        assert len(phase2_calls) >= 2  # One per agent
+        for call_args in phase2_calls:
+            # session_id should be in kwargs
+            assert "session_id" in call_args.kwargs or (
+                len(call_args.args) > 6  # positional fallback check
+            )

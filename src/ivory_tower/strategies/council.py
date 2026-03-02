@@ -90,11 +90,13 @@ def _run_agent(
     prompt: str,
     output_dir: str,
     verbose: bool = False,
+    **kwargs: Any,
 ) -> AgentOutput:
     """Run an agent through the executor and return its output.
 
     Wraps executor.run() with consistent parameters. The executor handles
     all protocol-specific details (ACP lifecycle, headless parsing, etc.).
+    Extra kwargs (e.g. session_id, on_chunk) are forwarded to the executor.
     """
     return executor.run(
         sandbox=sandbox,
@@ -102,6 +104,7 @@ def _run_agent(
         prompt=prompt,
         output_dir=output_dir,
         verbose=verbose,
+        **kwargs,
     )
 
 
@@ -389,16 +392,22 @@ class CouncilStrategy:
                             prompt_text, f"phase1/{agent}", config.verbose,
                         )] = agent
 
+                    session_ids: dict[str, str | None] = {}
                     for future in as_completed(futures):
                         agent = futures[future]
                         result = future.result()
                         # Write report from agent output to canonical path
                         report_path = phase1_dir / f"{agent}-report.md"
                         report_path.write_text(result.raw_output)
+                        # Capture session_id for Phase 2 reuse
+                        session_ids[agent] = result.metadata.get("session_id")
                         logger.debug(
                             "[%s] Phase 1 report: %d chars",
                             agent, len(result.raw_output),
                         )
+
+            # Store session_ids for Phase 2 reuse
+            self._session_ids = session_ids
 
         except Exception:
             research.status = PhaseStatus.FAILED
@@ -430,8 +439,13 @@ class CouncilStrategy:
 
     def _run_single_refinement(
         self, run_dir: Path, config: Any, agent: str,
+        session_id: str | None = None,
     ) -> tuple[str, float]:
-        """Run one refinement session: agent reviews all peer reports."""
+        """Run one refinement session: agent reviews all peer reports.
+
+        If session_id is provided, it's passed to the executor so the
+        agent can reuse context from Phase 1.
+        """
         phase1_dir = run_dir / "phase1"
         phase2_dir = run_dir / "phase2"
         phase2_dir.mkdir(parents=True, exist_ok=True)
@@ -465,9 +479,15 @@ class CouncilStrategy:
         sandbox = _create_sandbox(run_dir, agent, run_id, sandbox_backend)
 
         t0 = time.monotonic()
+        # Pass session_id for ACP session reuse from Phase 1
+        run_kwargs: dict[str, Any] = {}
+        if session_id is not None:
+            run_kwargs["session_id"] = session_id
+
         result = _run_agent(
             executor, sandbox, agent,
             prompt_text, f"phase2/{session_key}", config.verbose,
+            **run_kwargs,
         )
 
         # Write refined report to canonical path
@@ -499,10 +519,14 @@ class CouncilStrategy:
                 for agent in config.agents
             }
 
+            # Get session IDs from Phase 1 for session reuse
+            phase1_sessions = getattr(self, "_session_ids", {})
+
             with ThreadPoolExecutor() as pool:
                 futures = {
                     pool.submit(
-                        self._run_single_refinement, run_dir, config, agent
+                        self._run_single_refinement, run_dir, config, agent,
+                        session_id=phase1_sessions.get(agent),
                     ): agent
                     for agent in config.agents
                 }

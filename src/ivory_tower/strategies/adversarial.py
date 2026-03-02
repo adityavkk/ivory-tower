@@ -87,14 +87,19 @@ def _run_agent(
     prompt: str,
     output_dir: str,
     verbose: bool = False,
+    **kwargs: Any,
 ) -> AgentOutput:
-    """Run an agent through the executor and return its output."""
+    """Run an agent through the executor and return its output.
+
+    Extra kwargs (e.g. session_id, on_chunk) are forwarded to the executor.
+    """
     return executor.run(
         sandbox=sandbox,
         agent_name=agent_name,
         prompt=prompt,
         output_dir=output_dir,
         verbose=verbose,
+        **kwargs,
     )
 
 
