@@ -4,6 +4,14 @@ Multi-agent deep research from the terminal.
 
 Orchestrates [counselors](https://github.com/anomalyco/counselors) agents to research a topic in parallel, challenge each other's work, and synthesize a final report.
 
+```
+council:       research ──► cross-review ──► synthesize
+adversarial:   seed ──► optimize (GEPA loop) ──► synthesize
+debate:        opening ──► rounds (blackboard) ──► closing ──► verdict
+map-reduce:    decompose ──► map (1 agent/subtopic) ──► reduce
+red-blue:      blue research ──► red critique ──► blue defend ──► synthesize
+```
+
 ---
 
 ### Installation
@@ -38,22 +46,15 @@ cat topic.md | ivory research -a claude-opus,codex-5.3-xhigh -s claude-opus
 
 ### Strategies
 
-Five built-in strategies, each with a different research methodology:
-
-| Strategy | Agents | How it works |
-|----------|--------|--------------|
-| **council** | 2+ | Research independently, skeptically cross-review via new web searches, synthesize |
-| **adversarial** | 2 | Seed reports, iterative optimization scored by opposing agent ([GEPA](https://github.com/anomalyco/gepa)), synthesize |
-| **debate** | 2-6 | Structured turn-based argumentation with blackboard transcript, judge verdict |
-| **map-reduce** | 2-20 | Planner decomposes topic into subtopics, one agent per subtopic, synthesizer merges |
+| Strategy | Agents | Description |
+|----------|--------|-------------|
+| **council** | 2+ | Independent research, skeptical cross-review, synthesis |
+| **adversarial** | 2 | Iterative optimization scored by opposing agent via [GEPA](https://github.com/anomalyco/gepa) |
+| **debate** | 2-6 | Turn-based argumentation with shared blackboard transcript |
+| **map-reduce** | 2-20 | Decompose topic into subtopics, one agent per subtopic, merge |
 | **red-blue** | 3-10 | Red team critiques, blue team defends, synthesizer reconciles |
 
-```bash
-ivory strategies         # list all available strategies
-ivory templates          # list strategy templates (built-in + user-defined)
-```
-
-Strategies are also defined as YAML templates. Drop a `.yml` file in `~/.ivory-tower/strategies/` to create your own, or pass `--template path/to/strategy.yml`.
+Strategies are defined as YAML templates. Drop a `.yml` in `~/.ivory-tower/strategies/` to create your own, or pass `--template path/to/strategy.yml`.
 
 ### Commands
 
