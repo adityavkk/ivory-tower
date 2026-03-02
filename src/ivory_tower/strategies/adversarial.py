@@ -863,6 +863,7 @@ class AdversarialStrategy:
                     "final_score": s.final_score,
                     "output": s.output,
                     "log": s.log,
+                    "dimension_history": s.dimension_history,
                 }
                 for name, s in opt.seeds.items()
             },
@@ -920,6 +921,7 @@ class AdversarialStrategy:
                     final_score=s.get("final_score"),
                     output=s.get("output", ""),
                     log=s.get("log", ""),
+                    dimension_history=s.get("dimension_history", []),
                 )
                 for name, s in opt_d.get("seeds", {}).items()
             },
@@ -1122,6 +1124,13 @@ class AdversarialStrategy:
                     seed_result.seed_score = score
 
                 seed_result.rounds_completed = round_num
+
+                # Record per-round dimension scores for manifest persistence.
+                seed_result.dimension_history.append({
+                    "round": round_num,
+                    "score": score,
+                    "dimensions": dict(dimensions) if dimensions else {},
+                })
 
                 logger.info(
                     fmt_bullet("%s Round %d  %s [score]%s[/score]"),

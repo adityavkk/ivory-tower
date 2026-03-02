@@ -389,6 +389,25 @@ class TestAdversarialPhaseSerialization:
         assert loaded.phases["adversarial_optimization"].seeds["agent-a"].rounds_completed == 3
         assert loaded.phases["adversarial_optimization"].seeds["agent-a"].final_score == 7.0
 
+    def test_roundtrip_preserves_dimension_history(self, tmp_path):
+        """dimension_history should survive manifest save/load roundtrip."""
+        m = _make_adversarial_manifest()
+        opt = m.phases["adversarial_optimization"]
+        history = [
+            {"round": 1, "score": 5.0, "dimensions": {"factual_accuracy": 5}},
+            {"round": 2, "score": 7.0, "dimensions": {"factual_accuracy": 8}},
+        ]
+        opt.seeds["agent-a"].dimension_history = history
+
+        path = tmp_path / "manifest.json"
+        m.save(path)
+        loaded = Manifest.load(path)
+
+        restored_hist = loaded.phases["adversarial_optimization"].seeds["agent-a"].dimension_history
+        assert len(restored_hist) == 2
+        assert restored_hist[0]["score"] == 5.0
+        assert restored_hist[1]["dimensions"]["factual_accuracy"] == 8
+
 
 # ---------------------------------------------------------------------------
 # Commit 9: AdversarialStrategy.run() -- full pipeline with mocked GEPA
