@@ -1132,6 +1132,10 @@ class AdversarialStrategy:
 
                 return score, asi
 
+            # Accumulate feedback history across rounds for trajectory tracking.
+            # Each entry: {"round": N, "score": float, "dimensions": dict}.
+            feedback_history: list[dict] = []
+
             def proposer(
                 candidate: dict,
                 reflective_dataset: Mapping[str, Sequence[Mapping[str, Any]]],
@@ -1201,7 +1205,15 @@ class AdversarialStrategy:
                     current_report=candidate.get("report", ""),
                     judge_feedback=feedback,
                     round_num=seed_result.rounds_completed + 1,
+                    feedback_history=feedback_history if feedback_history else None,
                 )
+
+                # Append current round's feedback to history for future rounds.
+                feedback_history.append({
+                    "round": seed_result.rounds_completed,
+                    "score": feedback.get("score", 0.0),
+                    "dimensions": feedback.get("dimensions", {}),
+                })
 
                 improve_dir = phase2_dir / f"{agent}-improve-round-{seed_result.rounds_completed + 1:02d}"
                 improve_dir.mkdir(parents=True, exist_ok=True)

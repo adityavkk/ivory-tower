@@ -850,6 +850,125 @@ class TestAdversarialEvaluatorAndProposer:
         assert len(prompt_texts) >= 4  # seed gen + judge + improve + synthesis (minimum)
 
 
+class TestProposerFeedbackHistory:
+    """Gap 4b: proposer accumulates and passes feedback history to improvement prompt."""
+
+    def _setup_run_dir(self, tmp_path):
+        run_dir = tmp_path / "run-adv-001"
+        for d in ("phase1", "phase2", "phase3"):
+            (run_dir / d).mkdir(parents=True, exist_ok=True)
+        return run_dir
+
+    @patch("ivory_tower.strategies.adversarial.run_counselors")
+    def test_improvement_prompt_contains_score_trajectory(self, mock_counselors, tmp_path):
+        """After multiple rounds, the improvement prompt should include prior scores."""
+        s = AdversarialStrategy()
+        config = _make_config(output_dir=tmp_path, max_rounds=3)
+        m = _make_adversarial_manifest(config)
+        run_dir = self._setup_run_dir(tmp_path)
+
+        round_scores = [5.5, 6.5, 7.0]
+        call_counter = [0]
+
+        def tracking_counselors(prompt_file, agents, output_dir, verbose=False):
+            idx = min(call_counter[0] // 2, len(round_scores) - 1)  # crude round tracking
+            judge_data = {
+                "overall_score": round_scores[idx],
+                "dimensions": {"factual_accuracy": 6, "depth_of_analysis": 5},
+                "strengths": ["ok"], "weaknesses": ["needs work"],
+                "suggestions": ["improve"], "critique": "feedback",
+            }
+            slug = output_dir / "slug-001"
+            slug.mkdir(parents=True, exist_ok=True)
+            for agent in agents:
+                (slug / f"{agent}.md").write_text(json.dumps(judge_data))
+            call_counter[0] += 1
+            return MagicMock(returncode=0)
+
+        mock_counselors.side_effect = tracking_counselors
+
+        gepa_mod, gepa_oa = _fake_gepa_modules()
+        improve_prompts = []
+
+        def fake_optimize(seed_candidate, *, evaluator, objective=None, config=None, **kw):
+            proposer_fn = config.reflection.custom_candidate_proposer
+            current = seed_candidate
+            # Simulate 3 rounds: eval, propose, eval, propose, eval
+            for _i in range(3):
+                score, asi = evaluator(current)
+                current = proposer_fn(current, {"report": [asi]}, [])
+
+            # Collect improvement prompts from disk
+            phase2_dir = run_dir / "phase2"
+            for improve_dir in sorted(phase2_dir.glob("*-improve-round-*")):
+                pf = improve_dir / "improve-prompt.md"
+                if pf.exists():
+                    improve_prompts.append(pf.read_text())
+
+            return _make_optimize_result(current, best_score=7.0)
+
+        gepa_oa.optimize_anything = MagicMock(side_effect=fake_optimize)
+
+        with _patch_gepa_import(gepa_mod, gepa_oa):
+            s.run(run_dir, config, m)
+
+        # The later improvement prompts should contain "Score Trajectory"
+        # since feedback_history is accumulated across rounds
+        later_prompts = [p for p in improve_prompts if "Score Trajectory" in p]
+        assert len(later_prompts) > 0, (
+            "At least one improvement prompt should contain score trajectory "
+            f"from prior rounds. Got {len(improve_prompts)} prompts total."
+        )
+
+    @patch("ivory_tower.strategies.adversarial.run_counselors")
+    def test_first_round_prompt_has_no_trajectory(self, mock_counselors, tmp_path):
+        """The first improvement prompt should not have a trajectory section."""
+        s = AdversarialStrategy()
+        config = _make_config(output_dir=tmp_path, max_rounds=2)
+        m = _make_adversarial_manifest(config)
+        run_dir = self._setup_run_dir(tmp_path)
+
+        def tracking_counselors(prompt_file, agents, output_dir, verbose=False):
+            judge_data = {
+                "overall_score": 6.0,
+                "dimensions": {"factual_accuracy": 6, "depth_of_analysis": 5},
+                "strengths": [], "weaknesses": [], "suggestions": [], "critique": "ok",
+            }
+            slug = output_dir / "slug-001"
+            slug.mkdir(parents=True, exist_ok=True)
+            for agent in agents:
+                (slug / f"{agent}.md").write_text(json.dumps(judge_data))
+            return MagicMock(returncode=0)
+
+        mock_counselors.side_effect = tracking_counselors
+
+        gepa_mod, gepa_oa = _fake_gepa_modules()
+        first_prompts = []
+
+        def fake_optimize(seed_candidate, *, evaluator, objective=None, config=None, **kw):
+            proposer_fn = config.reflection.custom_candidate_proposer
+            score, asi = evaluator(seed_candidate)
+            improved = proposer_fn(seed_candidate, {}, [])
+
+            # Collect first improvement prompt
+            phase2_dir = run_dir / "phase2"
+            for improve_dir in sorted(phase2_dir.glob("*-improve-round-*")):
+                pf = improve_dir / "improve-prompt.md"
+                if pf.exists():
+                    first_prompts.append(pf.read_text())
+
+            return _make_optimize_result(improved, best_score=score)
+
+        gepa_oa.optimize_anything = MagicMock(side_effect=fake_optimize)
+
+        with _patch_gepa_import(gepa_mod, gepa_oa):
+            s.run(run_dir, config, m)
+
+        # First prompt should NOT have trajectory (no prior rounds)
+        for prompt in first_prompts:
+            assert "Score Trajectory" not in prompt
+
+
 class TestEvaluatorParetoScores:
     """Gap 1: evaluator ASI must include 'scores' key for GEPA Pareto tracking."""
 
