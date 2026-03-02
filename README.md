@@ -168,20 +168,80 @@ ivory profiles           # list all profiles
 
 ### Sandboxing
 
-Agent isolation for template-based strategies (debate, map-reduce, red-blue). Four backends:
+Agent isolation for template-based strategies (debate, map-reduce, red-blue). Each agent runs in its own sandbox; shared state flows through orchestrator-mediated blackboards -- agents never write to shared volumes directly.
 
-| Backend | Requires | Description |
-|---------|----------|-------------|
-| `none` | nothing | No isolation (default) |
-| `local` | nothing | Directory-based isolation per agent |
-| `agentfs` | [agentfs](https://agentfs.ai) CLI | SQLite copy-on-write filesystem with encryption and audit trail |
-| `daytona` | [daytona](https://daytona.io) SDK | Full Docker container isolation with resource limits |
+> Council and adversarial use direct filesystem paths and currently ignore `--sandbox`.
+
+#### Backends
+
+| Backend | Requires | Isolation | Snapshots | Audit |
+|---------|----------|-----------|-----------|-------|
+| `none` | nothing | None -- all agents share the run directory (default) | -- | -- |
+| `local` | nothing | Directory-based -- each agent gets `sandboxes/{agent}/workspace/` | -- | -- |
+| `agentfs` | [agentfs](https://agentfs.ai) CLI | OS-level (FUSE/namespaces on Linux, NFS/sandbox-exec on macOS) with SQLite CoW filesystem | Yes | Yes |
+| `daytona` | [daytona](https://daytona.io) SDK | Full Docker container with configurable CPU, memory, disk, and network policy | -- | -- |
+
+#### High-level interfaces
+
+Three `@runtime_checkable` protocols in `sandbox/types.py`:
+
+- **`SandboxProvider`** -- Factory. Creates per-agent sandboxes and shared volumes. Implementations registered in `sandbox/__init__.py` as `{"none", "local", "agentfs", "daytona"}`.
+- **`Sandbox`** -- An isolated workspace for one agent. Provides `execute()`, `read_file()`, `write_file()`, `copy_in()`, `copy_out()`, `snapshot()`, `diff()`, `destroy()`.
+- **`SharedVolume`** -- A shared filesystem region mountable into multiple sandboxes. Provides `write_file()`, `read_file()`, `append_file()`, `list_files()`.
+
+The `GenericTemplateExecutor` creates one sandbox per agent and one shared volume per blackboard, then runs phases in sequence. After each phase, `setup_phase_isolation()` copies data between sandboxes based on the phase's isolation mode:
+
+| Isolation mode | Behavior |
+|----------------|----------|
+| `full` | No data exchange -- sandboxes are fully isolated |
+| `read-peers` | Each agent receives peer outputs from a prior phase (excluding its own) |
+| `read-all` | Every agent receives all outputs from specified input phases |
+| `blackboard` | Current blackboard snapshot copied into each sandbox (read + append) |
+| `read-blackboard` | Same as blackboard, but read-only intent |
+| `team` | Team-internal shared volume files copied into each agent's sandbox |
+| `cross-team-read` | Opposing team outputs copied into each agent's sandbox |
+
+#### Blackboard pattern
+
+Orchestrator-mediated shared state via `FileBlackboard` (`sandbox/blackboard.py`). Two modes:
+
+- **Transcript mode** (`file:` set) -- single file, append-only. Each turn appends `## {agent} -- Round N`.
+- **Directory mode** (`dir:` set) -- one file per contribution: `{round}-{agent}.md`.
+
+Flow per round: orchestrator reads blackboard, writes snapshot into each sandbox, agents run, orchestrator reads outputs back, appends to blackboard. Agents see a consistent snapshot but never write directly.
+
+#### Usage with strategies
 
 ```bash
-ivory research "topic" --template debate -a a,b,c -s a --sandbox local
+# debate -- turn-based argumentation with shared blackboard transcript
+ivory research "topic" --template debate \
+  -a claude-opus,codex-5.3-xhigh,gemini-deep -s claude-opus \
+  --sandbox local --rounds 5
+
+# map-reduce -- decompose, research subtopics in parallel, merge
+ivory research "topic" --template map-reduce \
+  -a claude-opus,codex-5.3-xhigh,gemini-deep,amp-deep -s claude-opus \
+  --sandbox agentfs
+
+# red-blue -- adversarial team debate with cross-team isolation
+ivory research "topic" --template red-blue \
+  -a claude-opus,codex-5.3-xhigh,gemini-deep,amp-deep -s claude-opus \
+  --red-team claude-opus,codex-5.3-xhigh --blue-team gemini-deep,amp-deep \
+  --sandbox daytona
+
+# query the sandbox audit trail (agentfs only)
+ivory audit research/20260301-143000-a1b2c3/ claude-opus
 ```
 
-> Sandbox support is wired into the template executor used by debate, map-reduce, and red-blue. Council and adversarial use direct filesystem paths and currently ignore `--sandbox`.
+YAML templates can declare sandbox defaults that `--sandbox` overrides:
+
+```yaml
+defaults:
+  sandbox:
+    backend: local
+    snapshot_after_phase: true
+    snapshot_on_failure: true
+```
 
 ### Output
 
@@ -196,6 +256,104 @@ Each run produces a self-contained directory:
     phase2/                # cross-review / optimization artifacts
     phase3/final-report.md # synthesized report
 ```
+
+### Logging
+
+All pipeline output flows through a single logging system built on Python's `logging` module with [Rich](https://github.com/Textualize/rich) rendering. Call `setup_logging()` once at CLI startup; every module then uses `logging.getLogger(__name__)`.
+
+#### Architecture
+
+```
+src/ivory_tower/log.py          # shared console, symbols, formatters, spinners
+    console                     # Rich Console(theme=_THEME, stderr=True)
+    setup_logging()             # configures root logger with RichHandler
+    fmt_phase / fmt_ok / ...    # markup formatters
+    phase_spinner()             # context-manager spinner with auto-duration
+    create_agent_progress()     # multi-agent progress bar
+```
+
+All logging goes to stderr via the shared themed `Console`. The `RichHandler` renders timestamps, levels, and Rich markup automatically. Third-party loggers (httpx, openai, anthropic, etc.) are quietened to WARNING.
+
+#### Visual Language
+
+Every strategy follows the same visual pattern:
+
+```
+[HH:MM:SS] INFO  ▶ Research Pipeline                    # engine header
+[HH:MM:SS] INFO    ▸ Strategy: council
+[HH:MM:SS] INFO    ▸ Agents: agent-a, agent-b
+[HH:MM:SS] INFO    ▸ Synthesizer: synth
+[HH:MM:SS] INFO    ▸ Topic: "..."
+[HH:MM:SS] INFO    ▸ Run ID: 20260301-...
+
+[HH:MM:SS] INFO  ▶ Phase 1 -- Independent Research      # phase header
+[HH:MM:SS] INFO    ▸ Agents: agent-a, agent-b
+              ▸ Agents researching: agent-a, agent-b     # animated spinner
+              ✔ Agents researching: agent-a, agent-b (45.2s)
+[HH:MM:SS] INFO    ▸ Counselors session complete, normalizing output
+[HH:MM:SS] INFO  ✔ Phase 1 complete (45.2s)             # phase footer
+
+[HH:MM:SS] INFO  ▶ Phase 2 -- Cross-Pollination
+[HH:MM:SS] INFO    ▸ 2 agents refining reports concurrently
+              agent-a refining... ████████████ 0:00:32   # progress bar
+              ✔ agent-a refined (32.1s)
+              ✔ agent-b refined (28.7s)
+[HH:MM:SS] INFO  ✔ Phase 2 complete (32.1s)
+
+[HH:MM:SS] INFO  ▶ Phase 3 -- Synthesis
+[HH:MM:SS] INFO    ▸ Synthesizer: synth combining 2 refined reports
+              ▸ Synthesizer synth working...
+              ✔ Synthesizer synth working... (18.0s)
+[HH:MM:SS] INFO  ✔ Phase 3 complete (18.0s) -- final report: 14832 bytes
+
+[HH:MM:SS] INFO  ✔ Council pipeline complete (1m 35s)   # pipeline footer
+```
+
+#### Per-Strategy Logging
+
+| Strategy | Pipeline Header | Phase Headers | Step Detail | Spinners/Progress | Phase Footers | Pipeline Footer |
+|----------|----------------|---------------|-------------|-------------------|---------------|-----------------|
+| **council** | `run()` | Each `_run_phase{1,2,3}` | Agent lists, normalization | `phase_spinner`, `create_agent_progress` | Duration per phase | Duration total |
+| **adversarial** | `_run_adversarial_optimization` | Each `_run_*` method | Per-round scores, feedback, optimization progress | `phase_spinner` per judge/improve/optimize | Duration per phase | Duration total |
+| **debate** | `run()` | `GenericTemplateExecutor` per phase | Agent lists, isolation mode, round counts | `phase_spinner` per agent turn | Duration per phase | Duration total |
+| **map-reduce** | `run()` | `GenericTemplateExecutor` per phase | Agent lists, isolation mode, concurrency | `phase_spinner` for single-agent phases | Duration per phase | Duration total |
+| **red-blue** | `run()` | `GenericTemplateExecutor` per phase | Team assignments, isolation mode | `phase_spinner` per agent turn | Duration per phase | Duration total |
+
+Council and adversarial have custom Python logging at each step. Debate, map-reduce, and red-blue delegate phase execution to `GenericTemplateExecutor`, which logs phase headers/footers, round progress, agent dispatch, and timing for every phase defined in their YAML templates.
+
+#### Log Levels
+
+- `INFO` -- phase boundaries, scores, timing, completion messages. Visible by default.
+- `DEBUG` -- JSON extraction strategies, proposer/evaluator internals, round-level file paths. Enable with `--verbose` / `-v`.
+- `WARNING` -- parse failures, score 0.0 warnings, missing agent output, fallback paths.
+- `ERROR` -- optimization failures with full tracebacks (when verbose).
+
+#### Symbols
+
+| Symbol | Name | Usage |
+|--------|------|-------|
+| `▶` | `SYM_PHASE` | Phase headers |
+| `✔` | `SYM_OK` | Success / completion |
+| `✘` | `SYM_FAIL` | Failure |
+| `▸` | `SYM_ARROW` | Bullet / step detail |
+| `★` | `SYM_SCORE` | Score display |
+| `⟳` | `SYM_ROUND` | Round markers |
+| `✦` | `SYM_SPARK` | Highlights |
+
+#### Theme
+
+Rich markup tags used in log messages:
+
+| Tag | Style | Usage |
+|-----|-------|-------|
+| `[phase]` | bold cyan | Phase names, strategy headers |
+| `[agent]` | bold magenta | Agent names |
+| `[score]` | bold yellow | Scores, ratings |
+| `[ok]` | bold green | Success markers |
+| `[warn]` | bold yellow | Warnings |
+| `[fail]` | bold red | Failures |
+| `[dim]` | dim | Secondary info (run IDs, paths, topic previews) |
+| `[duration]` | cyan | Timing values |
 
 ### Requirements
 

@@ -2,17 +2,28 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from pathlib import Path
 from typing import Any
 
 from rich.console import Console
 
+from ivory_tower.log import (
+    fmt_agent,
+    fmt_bullet,
+    fmt_duration,
+    fmt_ok,
+    fmt_phase,
+)
 from ivory_tower.models import Flags, Manifest, PhaseStatus
 from ivory_tower.templates import load_template
 from ivory_tower.templates.executor import GenericTemplateExecutor
 
+logger = logging.getLogger(__name__)
 
-console = Console()
+# Stdout console for dry_run output (distinct from log.py's stderr console)
+_dry_run_console = Console()
 
 
 class MapReduceStrategy:
@@ -59,9 +70,13 @@ class MapReduceStrategy:
         )
 
     def run(self, run_dir: Path, config: Any, manifest: Manifest) -> Manifest:
-        import time
+        logger.info("")
+        t0 = time.monotonic()
 
-        start = time.monotonic()
+        agents_str = ", ".join(fmt_agent(a) for a in config.agents)
+        logger.info(fmt_phase("Map/Reduce Pipeline"))
+        logger.info(fmt_bullet("Agents: %s"), agents_str)
+        logger.info(fmt_bullet("Synthesizer: %s"), fmt_agent(config.synthesizer))
 
         template = load_template("map-reduce")
         executor = GenericTemplateExecutor(template)
@@ -81,8 +96,15 @@ class MapReduceStrategy:
         for phase_name in manifest.phases:
             manifest.phases[phase_name]["status"] = PhaseStatus.COMPLETE
 
-        manifest.total_duration_seconds = time.monotonic() - start
+        manifest.total_duration_seconds = time.monotonic() - t0
         manifest.save(run_dir / "manifest.json")
+
+        logger.info("")
+        logger.info(
+            fmt_ok("Map/Reduce pipeline complete [duration](%s)[/duration]"),
+            fmt_duration(manifest.total_duration_seconds),
+        )
+
         return manifest
 
     def resume(self, run_dir: Path, config: Any, manifest: Manifest) -> Manifest:
@@ -97,18 +119,18 @@ class MapReduceStrategy:
     def dry_run(self, config: Any) -> None:
         template = load_template("map-reduce")
 
-        console.print(f"\n[bold]Strategy:[/bold] {self.name}")
-        console.print(f"[bold]Description:[/bold] {self.description}")
-        console.print(f"[bold]Agents:[/bold] {', '.join(config.agents)}")
-        console.print(f"[bold]Synthesizer:[/bold] {config.synthesizer}")
-        console.print(f"\n[bold]Phases:[/bold]")
+        _dry_run_console.print(f"\n[bold]Strategy:[/bold] {self.name}")
+        _dry_run_console.print(f"[bold]Description:[/bold] {self.description}")
+        _dry_run_console.print(f"[bold]Agents:[/bold] {', '.join(config.agents)}")
+        _dry_run_console.print(f"[bold]Synthesizer:[/bold] {config.synthesizer}")
+        _dry_run_console.print(f"\n[bold]Phases:[/bold]")
         for phase in template.phases:
             agents_desc = (
                 phase.agents
                 if isinstance(phase.agents, str)
                 else ", ".join(phase.agents)
             )
-            console.print(
+            _dry_run_console.print(
                 f"  {phase.name}: {phase.description} "
                 f"(isolation={phase.isolation}, agents={agents_desc})"
             )

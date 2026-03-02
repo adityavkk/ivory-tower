@@ -9,12 +9,21 @@ from __future__ import annotations
 import json
 import logging
 import string
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 from ivory_tower.executor import get_executor
 from ivory_tower.executor.types import AgentExecutor, AgentOutput
+from ivory_tower.log import (
+    fmt_agent,
+    fmt_bullet,
+    fmt_duration,
+    fmt_ok,
+    fmt_phase,
+    phase_spinner,
+)
 from ivory_tower.sandbox import get_provider
 from ivory_tower.sandbox.blackboard import FileBlackboard
 from ivory_tower.sandbox.types import Sandbox, SandboxConfig, SharedVolume
@@ -24,6 +33,7 @@ from ivory_tower.templates.loader import (
 )
 
 logger = logging.getLogger(__name__)
+
 
 
 def _safe_format(template: str, **kwargs: Any) -> str:
@@ -175,6 +185,17 @@ class GenericTemplateExecutor:
 
         run_id = run_dir.name
 
+        template_name = self.template.name
+        total_phases = len(self.template.phases)
+        logger.info("")
+        logger.info(fmt_phase("%s Template -- %d phases"), template_name, total_phases)
+        agents_str = ", ".join(fmt_agent(a) for a in agents)
+        logger.info(fmt_bullet("Agents: %s"), agents_str)
+        logger.info(fmt_bullet("Synthesizer: %s"), fmt_agent(synthesizer))
+        logger.info(fmt_bullet("Sandbox: %s"), sandbox_backend)
+
+        t0_total = time.monotonic()
+
         try:
             # Create agent sandboxes (including synthesizer if not in agents list)
             all_participants = list(agents)
@@ -216,7 +237,7 @@ class GenericTemplateExecutor:
                         )
 
             # Execute phases in order
-            for phase in self.template.phases:
+            for phase_idx, phase in enumerate(self.template.phases, 1):
                 phase_agents = self._resolve_phase_agents(
                     phase, agents, synthesizer, teams, outputs,
                 )
@@ -236,6 +257,24 @@ class GenericTemplateExecutor:
                 else:
                     num_rounds = None
 
+                # -- Phase header --
+                phase_desc = phase.description or phase.name
+                phase_agents_str = ", ".join(fmt_agent(a) for a in phase_agents)
+                logger.info("")
+                logger.info(
+                    fmt_phase("Phase %d/%d -- %s"),
+                    phase_idx, total_phases, phase_desc,
+                )
+                logger.info(fmt_bullet("Agents: %s"), phase_agents_str)
+                logger.info(
+                    fmt_bullet("Isolation: %s"),
+                    phase.isolation,
+                )
+                if num_rounds:
+                    logger.info(fmt_bullet("Rounds: %d"), num_rounds)
+
+                t0_phase = time.monotonic()
+
                 if num_rounds:
                     outputs[phase.name] = self._run_iterative_phase(
                         phase, phase_sandboxes, volumes, outputs,
@@ -247,11 +286,24 @@ class GenericTemplateExecutor:
                         executor, run_dir, topic, teams, verbose,
                     )
 
+                phase_elapsed = time.monotonic() - t0_phase
+                logger.info(
+                    fmt_ok("Phase %d/%d complete [duration](%s)[/duration]"),
+                    phase_idx, total_phases, fmt_duration(phase_elapsed),
+                )
+
         finally:
             # Cleanup
             for sandbox in sandboxes.values():
                 sandbox.destroy()
             provider.destroy_all(run_id)
+
+        total_elapsed = time.monotonic() - t0_total
+        logger.info("")
+        logger.info(
+            fmt_ok("%s template complete [duration](%s)[/duration]"),
+            template_name, fmt_duration(total_elapsed),
+        )
 
         return outputs
 
@@ -307,9 +359,12 @@ class GenericTemplateExecutor:
         phase_outputs: dict[str, Path] = {}
         prompt = topic  # Base prompt is the topic
 
+        n_agents = len(sandboxes)
+
         # Run all agents (parallel if multiple)
-        if len(sandboxes) > 1:
-            with ThreadPoolExecutor(max_workers=len(sandboxes)) as pool:
+        if n_agents > 1:
+            logger.info(fmt_bullet("%d agents running concurrently"), n_agents)
+            with ThreadPoolExecutor(max_workers=n_agents) as pool:
                 futures = {}
                 for agent_name, sandbox in sandboxes.items():
                     futures[agent_name] = pool.submit(
@@ -327,18 +382,25 @@ class GenericTemplateExecutor:
                     canonical.parent.mkdir(parents=True, exist_ok=True)
                     sandboxes[agent_name].copy_out(result.report_path, canonical)
                     phase_outputs[agent_name] = canonical
+                    logger.debug(
+                        "Agent %s output -> %s", agent_name, canonical,
+                    )
         else:
             for agent_name, sandbox in sandboxes.items():
-                result = executor.run(
-                    sandbox, agent_name, prompt,
-                    f"output/{phase.name}",
-                    verbose=verbose,
-                )
+                with phase_spinner(f"{fmt_agent(agent_name)} working..."):
+                    result = executor.run(
+                        sandbox, agent_name, prompt,
+                        f"output/{phase.name}",
+                        verbose=verbose,
+                    )
                 output_filename = _safe_format(phase.output, agent=agent_name)
                 canonical = run_dir / phase.name / output_filename
                 canonical.parent.mkdir(parents=True, exist_ok=True)
                 sandbox.copy_out(result.report_path, canonical)
                 phase_outputs[agent_name] = canonical
+                logger.debug(
+                    "Agent %s output -> %s", agent_name, canonical,
+                )
 
         return phase_outputs
 
@@ -365,8 +427,16 @@ class GenericTemplateExecutor:
             )
 
         phase_outputs: dict[str, Path] = {}
+        agent_names = list(sandboxes.keys())
 
         for round_num in range(1, num_rounds + 1):
+            logger.info(
+                fmt_bullet("Round %d/%d -- agents: %s"),
+                round_num, num_rounds,
+                ", ".join(fmt_agent(a) for a in agent_names),
+            )
+            t0_round = time.monotonic()
+
             # Refresh blackboard content in each sandbox
             if blackboard and phase.blackboard and phase.blackboard.file:
                 current_bb = blackboard.get_content()
@@ -379,13 +449,16 @@ class GenericTemplateExecutor:
             # Run agents sequentially within each round (turn-based)
             for agent_name, sandbox in sandboxes.items():
                 prompt = topic
-                result = executor.run(
-                    sandbox,
-                    agent_name,
-                    prompt,
-                    f"output/{phase.name}/round-{round_num:02d}",
-                    verbose=verbose,
-                )
+                with phase_spinner(
+                    f"{fmt_agent(agent_name)} (round {round_num}/{num_rounds})"
+                ):
+                    result = executor.run(
+                        sandbox,
+                        agent_name,
+                        prompt,
+                        f"output/{phase.name}/round-{round_num:02d}",
+                        verbose=verbose,
+                    )
 
                 # Copy output to canonical location
                 output_filename = _safe_format(
@@ -402,5 +475,10 @@ class GenericTemplateExecutor:
                         blackboard.append(agent_name, round_num, report_text)
 
                 phase_outputs[f"{agent_name}-round-{round_num}"] = canonical
+
+            round_elapsed = time.monotonic() - t0_round
+            logger.debug(
+                "Round %d complete (%s)", round_num, fmt_duration(round_elapsed),
+            )
 
         return phase_outputs

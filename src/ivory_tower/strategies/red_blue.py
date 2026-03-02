@@ -2,17 +2,28 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from pathlib import Path
 from typing import Any
 
 from rich.console import Console
 
+from ivory_tower.log import (
+    fmt_agent,
+    fmt_bullet,
+    fmt_duration,
+    fmt_ok,
+    fmt_phase,
+)
 from ivory_tower.models import Flags, Manifest, PhaseStatus
 from ivory_tower.templates import load_template
 from ivory_tower.templates.executor import GenericTemplateExecutor
 
+logger = logging.getLogger(__name__)
 
-console = Console()
+# Stdout console for dry_run output (distinct from log.py's stderr console)
+_dry_run_console = Console()
 
 
 class RedBlueStrategy:
@@ -71,16 +82,23 @@ class RedBlueStrategy:
         )
 
     def run(self, run_dir: Path, config: Any, manifest: Manifest) -> Manifest:
-        import time
+        logger.info("")
+        t0 = time.monotonic()
 
-        start = time.monotonic()
+        red_team: list[str] = getattr(config, "red_team", [])
+        blue_team: list[str] = getattr(config, "blue_team", [])
+
+        red_str = ", ".join(fmt_agent(a) for a in red_team) if red_team else "unassigned"
+        blue_str = ", ".join(fmt_agent(a) for a in blue_team) if blue_team else "unassigned"
+        logger.info(fmt_phase("Red/Blue Pipeline"))
+        logger.info(fmt_bullet("Red Team: %s"), red_str)
+        logger.info(fmt_bullet("Blue Team: %s"), blue_str)
+        logger.info(fmt_bullet("Judge: %s"), fmt_agent(config.synthesizer))
 
         template = load_template("red-blue")
         executor = GenericTemplateExecutor(template)
 
         sandbox_backend = getattr(config, "sandbox_backend", "none")
-        red_team: list[str] = getattr(config, "red_team", [])
-        blue_team: list[str] = getattr(config, "blue_team", [])
 
         # Build teams mapping
         teams: dict[str, str] = {}
@@ -103,8 +121,15 @@ class RedBlueStrategy:
         for phase_name in manifest.phases:
             manifest.phases[phase_name]["status"] = PhaseStatus.COMPLETE
 
-        manifest.total_duration_seconds = time.monotonic() - start
+        manifest.total_duration_seconds = time.monotonic() - t0
         manifest.save(run_dir / "manifest.json")
+
+        logger.info("")
+        logger.info(
+            fmt_ok("Red/Blue pipeline complete [duration](%s)[/duration]"),
+            fmt_duration(manifest.total_duration_seconds),
+        )
+
         return manifest
 
     def resume(self, run_dir: Path, config: Any, manifest: Manifest) -> Manifest:
@@ -120,23 +145,23 @@ class RedBlueStrategy:
         red_team: list[str] = getattr(config, "red_team", [])
         blue_team: list[str] = getattr(config, "blue_team", [])
 
-        console.print(f"\n[bold]Strategy:[/bold] {self.name}")
-        console.print(f"[bold]Description:[/bold] {self.description}")
-        console.print(
+        _dry_run_console.print(f"\n[bold]Strategy:[/bold] {self.name}")
+        _dry_run_console.print(f"[bold]Description:[/bold] {self.description}")
+        _dry_run_console.print(
             f"[bold]Red Team:[/bold] {', '.join(red_team) if red_team else 'unassigned'}"
         )
-        console.print(
+        _dry_run_console.print(
             f"[bold]Blue Team:[/bold] {', '.join(blue_team) if blue_team else 'unassigned'}"
         )
-        console.print(f"[bold]Synthesizer (Judge):[/bold] {config.synthesizer}")
-        console.print("\n[bold]Phases:[/bold]")
+        _dry_run_console.print(f"[bold]Synthesizer (Judge):[/bold] {config.synthesizer}")
+        _dry_run_console.print("\n[bold]Phases:[/bold]")
         for phase in template.phases:
             agents_desc = (
                 phase.agents
                 if isinstance(phase.agents, str)
                 else ", ".join(phase.agents)
             )
-            console.print(
+            _dry_run_console.print(
                 f"  {phase.name}: {phase.description} "
                 f"(isolation={phase.isolation}, agents={agents_desc})"
             )
