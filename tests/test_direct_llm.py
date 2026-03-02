@@ -458,3 +458,99 @@ class TestMakeDirectProposer:
         # Feedback should have been read from the judge md
         assert len(feedback_history) == 1
         assert feedback_history[0]["score"] == 7.5
+
+    @patch("ivory_tower.strategies.direct_llm._llm_completion")
+    def test_proposer_reads_full_feedback_from_debug_json(
+        self, mock_completion, tmp_path,
+    ):
+        """round-debug.json now contains strengths/weaknesses/suggestions;
+        the proposer should read them and pass to build_improvement_prompt."""
+        mock_completion.return_value = "improved report"
+
+        judging_dir = tmp_path / "judging"
+        judging_dir.mkdir()
+        phase2_dir = tmp_path / "phase2"
+        phase2_dir.mkdir()
+        seed_result = FakeSeedResult(rounds_completed=1)
+
+        # Write round-debug.json with full evaluation feedback
+        round_dir = judging_dir / "round-01-agent-b-judges-agent-a"
+        round_dir.mkdir(parents=True)
+        (round_dir / "round-debug.json").write_text(json.dumps({
+            "agent": "agent-a",
+            "judge": "agent-b",
+            "round": 1,
+            "score": 7.5,
+            "dimensions": {"factual_accuracy": 8, "depth_of_analysis": 7},
+            "strengths": ["Good coverage", "Well structured"],
+            "weaknesses": ["Limited sources"],
+            "suggestions": ["Add more primary sources"],
+            "critique": "Solid report with room for improvement.",
+        }))
+
+        captured_feedback: dict = {}
+
+        def capture_improvement_prompt(**kw):
+            captured_feedback.update(kw.get("judge_feedback", {}))
+            return "improve prompt"
+
+        proposer = make_direct_proposer(
+            agent="agent-a",
+            judge="agent-b",
+            model="openai/test",
+            api_base=None,
+            topic="test topic",
+            judging_dir=judging_dir,
+            phase2_dir=phase2_dir,
+            seed_result=seed_result,
+            feedback_history=[],
+            config=MagicMock(),
+            build_judging_prompt=lambda t, r: "judge",
+            build_improvement_prompt=capture_improvement_prompt,
+        )
+
+        proposer({"report": "original"}, {}, ["report"])
+
+        # The proposer must pass full feedback to build_improvement_prompt
+        assert captured_feedback["score"] == 7.5
+        assert captured_feedback["strengths"] == ["Good coverage", "Well structured"]
+        assert captured_feedback["weaknesses"] == ["Limited sources"]
+        assert captured_feedback["suggestions"] == ["Add more primary sources"]
+        assert captured_feedback["critique"] == "Solid report with room for improvement."
+
+    @patch("ivory_tower.strategies.direct_llm._llm_completion")
+    def test_evaluator_writes_full_feedback_to_debug_json(
+        self, mock_completion, tmp_path,
+    ):
+        """The evaluator should persist strengths/weaknesses/suggestions/critique
+        in round-debug.json so the proposer can read them."""
+        mock_completion.return_value = (
+            "Here is my evaluation.\n\n" + GOOD_EVAL_JSON
+        )
+
+        judging_dir = tmp_path / "judging"
+        judging_dir.mkdir()
+        seed_result = FakeSeedResult()
+
+        evaluator = make_direct_evaluator(
+            agent="agent-a",
+            judge="agent-b",
+            model="openai/test",
+            api_base=None,
+            topic="test topic",
+            judging_dir=judging_dir,
+            round_counter=[0],
+            seed_result=seed_result,
+            build_judging_prompt=lambda topic, report: f"Judge: {topic}",
+        )
+
+        evaluator({"report": "test report"})
+
+        debug_file = judging_dir / "round-01-agent-b-judges-agent-a" / "round-debug.json"
+        debug_data = json.loads(debug_file.read_text())
+
+        assert debug_data["score"] == 7.5
+        assert debug_data["strengths"] == ["Good coverage", "Well structured"]
+        assert debug_data["weaknesses"] == ["Limited sources"]
+        assert debug_data["suggestions"] == ["Add more primary sources"]
+        assert debug_data["critique"] == "Solid report with room for improvement."

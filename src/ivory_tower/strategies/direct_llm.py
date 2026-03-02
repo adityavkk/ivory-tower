@@ -17,6 +17,22 @@ from typing import Any, Mapping, Sequence
 
 logger = logging.getLogger(__name__)
 
+_litellm_quieted = False
+
+
+def _quiet_litellm() -> None:
+    """Suppress litellm's verbose INFO/DEBUG logging (idempotent)."""
+    global _litellm_quieted  # noqa: PLW0603
+    if _litellm_quieted:
+        return
+    import litellm
+
+    litellm.suppress_debug_info = True  # type: ignore[attr-defined]
+    litellm.set_verbose = False  # type: ignore[attr-defined]
+    for name in ("LiteLLM", "LiteLLM Proxy", "LiteLLM Router", "httpx"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+    _litellm_quieted = True
+
 
 def _llm_completion(
     model: str,
@@ -29,6 +45,8 @@ def _llm_completion(
 ) -> str:
     """Call litellm.completion and return the response text."""
     import litellm
+
+    _quiet_litellm()
 
     messages: list[dict[str, str]] = [{"role": "user", "content": prompt}]
 
@@ -202,7 +220,7 @@ def make_direct_evaluator(
             "dimensions": dict(dimensions) if dimensions else {},
         })
 
-        # Persist round debug info
+        # Persist round debug info (include full evaluation for proposer)
         try:
             (round_dir / "round-debug.json").write_text(json.dumps({
                 "agent": agent,
@@ -210,6 +228,10 @@ def make_direct_evaluator(
                 "round": round_num,
                 "score": score,
                 "dimensions": dict(dimensions) if dimensions else {},
+                "strengths": asi.get("strengths", []),
+                "weaknesses": asi.get("weaknesses", []),
+                "suggestions": asi.get("suggestions", []),
+                "critique": asi.get("critique", ""),
                 "duration_seconds": elapsed,
                 "response_length": len(response_text),
                 "parse_success": evaluation is not None,
@@ -292,6 +314,10 @@ def make_direct_proposer(
                         feedback = {
                             "score": debug_data["score"],
                             "dimensions": debug_data.get("dimensions", {}),
+                            "strengths": debug_data.get("strengths", []),
+                            "weaknesses": debug_data.get("weaknesses", []),
+                            "suggestions": debug_data.get("suggestions", []),
+                            "critique": debug_data.get("critique", ""),
                         }
                 except (json.JSONDecodeError, KeyError):
                     pass
