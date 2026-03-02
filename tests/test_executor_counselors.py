@@ -161,6 +161,35 @@ class TestFindReport:
         path = _find_report(sb, "out", "agent")
         assert path == "out/report.md"
 
+    def test_prefers_agent_name_match(self):
+        """When agent's own .md file is present, prefer it over others."""
+        sb = MagicMock()
+        sb.list_files.return_value = [
+            "slug/prompt.md", "slug/summary.md", "slug/researcher.md",
+        ]
+        path = _find_report(sb, "out", "researcher")
+        assert path == "out/slug/researcher.md"
+
+    def test_filters_meta_files(self):
+        """Should skip prompt.md and summary.md, pick remaining .md."""
+        sb = MagicMock()
+        sb.list_files.return_value = [
+            "slug/prompt.md", "slug/summary.md", "slug/run.json",
+            "slug/custom-report.md",
+        ]
+        path = _find_report(sb, "out", "some-agent")
+        assert path == "out/slug/custom-report.md"
+
+    def test_picks_largest_when_multiple_candidates(self):
+        """With multiple non-meta .md files, pick the largest."""
+        sb = MagicMock()
+        sb.list_files.return_value = [
+            "slug/small.md", "slug/large.md",
+        ]
+        sb.read_file.side_effect = lambda p: "x" if "small" in p else "x" * 100
+        path = _find_report(sb, "out", "other-agent")
+        assert path == "out/slug/large.md"
+
     def test_falls_back_to_any_file(self):
         sb = MagicMock()
         sb.list_files.return_value = ["output.txt"]
