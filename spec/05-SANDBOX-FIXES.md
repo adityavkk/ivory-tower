@@ -190,3 +190,184 @@ configuration issue, not an ivory-tower bug, but it affects reliability.
 
 **Workaround**: Use agents that don't require permission prompts for file
 access (e.g. claude-based agents) when running sandboxed strategies.
+
+---
+
+## TDD plan
+
+Each issue lists RED tests (write first, must fail) then GREEN implementation.
+Tests target existing files where possible -- no new test files unless needed.
+
+### Issue 1: Dynamic fan-out
+
+RED tests go in `tests/test_template_executor.py`:
+
+```python
+class TestResolvePhaseAgents:
+    """Unit tests for _resolve_phase_agents()."""
+
+    def test_dynamic_with_fan_out_parses_subtopics_from_numbered_list(self):
+        """Planner output with '1. Topic A\n2. Topic B' produces 2 agent
+        assignments, one per subtopic."""
+
+    def test_dynamic_with_fan_out_parses_subtopics_from_headings(self):
+        """Planner output with '## Topic A\n## Topic B' produces 2 assignments."""
+
+    def test_dynamic_with_fan_out_assigns_agents_round_robin(self):
+        """3 subtopics + 2 agents -> agents assigned round-robin."""
+
+    def test_dynamic_with_fan_out_populates_subtopic_variable(self):
+        """Output filename '{subtopic}-research.md' resolves to actual subtopic
+        names, not 'unknown'."""
+
+    def test_dynamic_without_fan_out_falls_back_to_all_agents(self):
+        """agents='dynamic' with no fan_out or missing prior phase returns all."""
+
+class TestMapReduceEndToEnd:
+    def test_map_reduce_subtopics_produce_separate_files(self):
+        """Full map-reduce run: decompose produces 3 subtopics, map phase
+        creates 3 distinct output files (not 'unknown-research.md')."""
+```
+
+GREEN: Implement subtopic parsing in `_resolve_phase_agents()`. Read the
+fan-out phase's output files, extract subtopics (numbered list, markdown
+headings, or JSON array), return `(agent, subtopic)` pairs assigned
+round-robin. Pass `subtopic` into `_safe_format()` for output filenames.
+
+### Issue 2: Blackboard context in prompts
+
+RED tests go in `tests/test_template_executor.py`:
+
+```python
+class TestIterativePhaseBlackboardPrompt:
+    def test_prompt_includes_blackboard_transcript(self):
+        """In round 2, the prompt passed to the executor includes the
+        blackboard transcript from round 1, not just the raw topic."""
+
+    def test_prompt_in_round_1_has_empty_transcript(self):
+        """In round 1 (empty blackboard), prompt still includes the
+        blackboard section header but no prior content."""
+
+    def test_prompt_without_blackboard_is_just_topic(self):
+        """Phases with no blackboard config pass topic as-is."""
+```
+
+GREEN: In `_run_iterative_phase()`, before each agent call, read
+`blackboard.get_content()` and build a composite prompt:
+`f"{topic}\n\n## Previous discussion\n\n{transcript}"` when transcript
+is non-empty, else just `topic`. No changes to `_run_single_phase()`.
+
+### Issue 3: `LocalSandbox.snapshot()`
+
+No new tests needed. `test_sandbox_local.py::TestLocalSandboxSnapshotDiffDestroy::test_snapshot_returns_none`
+already asserts `snapshot()` returns `None`. Flip this test:
+
+```python
+# Change existing test from:
+def test_snapshot_returns_none(self):
+    assert sandbox.snapshot("snap1") is None
+
+# To:
+def test_snapshot_returns_path(self):
+    sandbox.write_file("doc.md", "content")
+    snap = sandbox.snapshot("snap1")
+    assert snap is not None
+    assert Path(snap).exists()
+    # Verify snapshot is independent -- delete original, snapshot persists
+    os.remove(sandbox._resolve("doc.md"))
+    assert Path(snap).exists()
+```
+
+GREEN: Implement `snapshot()` in `LocalSandbox` as a `shutil.copytree()`
+of the workspace to `snapshots/{label}/`. Return the snapshot path.
+
+### Issue 4: Council/adversarial ignore `--sandbox`
+
+RED tests go in `tests/test_engine.py`:
+
+```python
+class TestSandboxWarning:
+    def test_council_with_sandbox_warns(self):
+        """Running council with --sandbox local emits a warning that
+        sandbox is not supported for this strategy."""
+
+    def test_adversarial_with_sandbox_warns(self):
+        """Running adversarial with --sandbox local emits a warning."""
+
+    def test_debate_with_sandbox_no_warning(self):
+        """Template-based strategies with --sandbox produce no warning."""
+```
+
+GREEN: In `engine.py::run_pipeline()`, after resolving the strategy, check
+if the strategy class has a `supports_sandbox` attribute (default `False`
+on council/adversarial, `True` on template-based strategies). If
+`config.sandbox_backend != "none"` and the strategy doesn't support it,
+emit `logger.warning()`. This is fix option (c) -- cheapest, safest.
+
+### Issue 5: Resume preserves `sandbox_backend`
+
+RED test goes in `tests/test_engine.py` (extend existing `TestResumePipeline`):
+
+```python
+def test_resume_reconstructs_sandbox_backend(self):
+    """resume_pipeline() restores sandbox_backend from manifest.sandbox_config."""
+```
+
+Also in `tests/test_sandbox_integration.py` (extend `TestManifestBackwardCompatibility`):
+
+```python
+def test_v3_manifest_sandbox_config_survives_resume(self):
+    """Manifest with sandbox_config={'backend': 'local'} is restored
+    into RunConfig.sandbox_backend='local' during resume."""
+```
+
+GREEN: In `engine.py::resume_pipeline()`, read
+`manifest.sandbox_config.get("backend", "none")` and set it on the
+reconstructed `RunConfig`.
+
+### Issue 6: AgentFS and Daytona live tests
+
+RED tests go in `tests/test_sandbox_live.py` (already created on the branch):
+
+```python
+@pytest.mark.live
+@pytest.mark.skipif(not shutil.which("agentfs"), reason="agentfs not installed")
+class TestAgentFSLive:
+    def test_create_sandbox_write_read_destroy(self): ...
+    def test_shared_volume_lifecycle(self): ...
+    def test_snapshot_produces_db_copy(self): ...
+    def test_diff_after_write(self): ...
+
+@pytest.mark.live
+@pytest.mark.skipif(not _daytona_available(), reason="daytona not installed")
+class TestDaytonaLive:
+    def test_create_sandbox_write_read_destroy(self): ...
+    def test_execute_command_in_container(self): ...
+    def test_resource_limits_applied(self): ...
+```
+
+GREEN: Install `agentfs` and `daytona` in a CI environment, run the tests.
+No source changes expected -- the providers are already implemented. If
+tests fail, fix the providers.
+
+### Issue 7: Empty agent output
+
+No code fix needed (external agent behavior). No new tests -- the existing
+live test `test_sandbox_live.py` already handles this with resilience
+checks (`373d99f`). Document the workaround in the README sandbox section.
+
+---
+
+## Commit plan
+
+| # | Branch work | Commit message |
+|---|-------------|----------------|
+| 1 | RED: fan-out tests | `test: add failing tests for dynamic fan-out subtopic resolution` |
+| 2 | GREEN: implement fan-out | `feat: implement dynamic fan-out with subtopic parsing in template executor` |
+| 3 | RED: blackboard prompt tests | `test: add failing tests for blackboard transcript in iterative prompts` |
+| 4 | GREEN: inject transcript | `feat: inject blackboard transcript into iterative phase prompts` |
+| 5 | RED+GREEN: local snapshot | `feat: implement LocalSandbox.snapshot() as directory copy` |
+| 6 | RED+GREEN: sandbox warning | `fix: warn when --sandbox used with council/adversarial` |
+| 7 | RED+GREEN: resume sandbox | `fix: restore sandbox_backend from manifest on resume` |
+| 8 | RED: agentfs/daytona live | `test: add live test skeletons for agentfs and daytona backends` |
+| 9 | Regression run | `chore: verify full test suite passes` |
