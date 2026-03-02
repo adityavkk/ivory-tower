@@ -113,7 +113,7 @@ Agent configs live in `~/.ivory-tower/agents/<name>.yml`. See `spec/06-ACP-SPEC.
 ## Fragile Areas -- Tread Carefully
 
 - **`strategies/adversarial.py`** (~1300 lines): most complex file. GEPA integration, 5 JSON extraction strategies, score parsing from prose, feedback extraction. Known open issues in `spec/07-GEPA-FIXES.md`.
-- **Counselors output parsing**: `counselors` is third-party WIP. Output structure (`<slug>/<agent>.md`) may contain conversational meta-commentary instead of actual report artifacts. The `_find_best_report_file()` heuristic and `_normalize_counselors_output()` compensate for this. Any changes here need defensive handling. This is being superseded by ACP (structured output, no filesystem scraping).
+- **Legacy counselors executor**: `executor/counselors_exec.py` still wraps the counselors CLI for backward compatibility. Output parsing lives in that executor. Strategies no longer call `run_counselors()` directly -- they go through the `AgentExecutor` protocol. ACP agents produce structured output (no filesystem scraping).
 - **`acp_client.py`**: Path traversal prevention and isolation mode enforcement. Changes to `_resolve_sandbox_path()` or `_check_read_allowed()`/`_check_write_allowed()` affect security boundaries.
 
 ## Counselors Output Structure (Legacy)
