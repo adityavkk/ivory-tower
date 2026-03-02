@@ -214,7 +214,14 @@ class GenericTemplateExecutor:
                     elif a == synthesizer and synthesizer in sandboxes:
                         phase_sandboxes[a] = sandboxes[synthesizer]
 
-                num_rounds = rounds_override or phase.rounds or self.template.defaults.rounds
+                # Only phases that explicitly declare rounds are iterative.
+                # defaults.rounds provides a fallback count for those phases.
+                # rounds_override can override that count but won't make a
+                # non-iterative phase iterative.
+                if phase.rounds is not None:
+                    num_rounds = rounds_override or phase.rounds or self.template.defaults.rounds
+                else:
+                    num_rounds = None
 
                 if num_rounds:
                     outputs[phase.name] = self._run_iterative_phase(
