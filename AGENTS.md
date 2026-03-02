@@ -219,7 +219,7 @@ New specs and feature designs use the WANT/DON'T/LIKE/FOR/ENSURE/TRUST format fr
 | **ENSURE** | Acceptance criteria; testable assertions; CLI examples |
 | **TRUST** | Assumptions; things delegated to external systems |
 
-See `spec/SPEC.md`, `spec/STRATEGY-SPEC.md`, `spec/SANDBOX-SPEC.md` as templates.
+See `spec/01-SPEC.md`, `spec/02-STRATEGY-SPEC.md`, `spec/03-SANDBOX-SPEC.md` as templates.
 
 ## Git Workflow
 

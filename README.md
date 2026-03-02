@@ -161,6 +161,9 @@ ivory research TOPIC [OPTIONS]    Run a research pipeline
 ivory resume   RUN_DIR            Resume a partially-completed run
 ivory status   RUN_DIR            Print status summary
 ivory list                        List all runs in output directory
+ivory agents                      List configured agents (from ~/.ivory-tower/agents/)
+ivory agents check NAME           Verify agent binary resolves and ACP handshake works
+ivory migrate                     Show migration status from counselors to ACP
 ivory strategies                  List available strategies
 ivory templates                   List strategy templates
 ivory profiles                    List agent profiles
@@ -186,15 +189,15 @@ ivory audit    RUN_DIR [AGENT]    Query sandbox audit trail
 | `--blue-team` | | Agent specs for blue team (red-blue strategy) |
 | `--dry-run` | | Show the execution plan without running |
 | `--json` | | Print manifest JSON on completion |
+| `--stream` | | Stream live agent output to terminal (Rich Live panels) |
 | `--verbose` | `-v` | Rich logging with animated spinners and debug output |
 
 ### Agent profiles
 
-Reusable agent identities stored as YAML in `~/.ivory-tower/profiles/`:
+Reusable agent identities stored as YAML in `~/.ivory-tower/profiles/`. Profiles are distinct from agent configs -- they define persona/system prompt overlays, not execution binaries.
 
 ```yaml
 # ~/.ivory-tower/profiles/deep-researcher.yml
-model: claude-opus
 role: researcher
 system_prompt: "You are a thorough researcher..."
 ```
@@ -202,7 +205,7 @@ system_prompt: "You are a thorough researcher..."
 Reference profiles on the CLI with `@name`:
 
 ```bash
-ivory research "topic" -a @deep-researcher,@fast-scanner -s claude-opus
+ivory research "topic" -a @deep-researcher,@fast-scanner -s opencode-haiku
 ```
 
 ```bash
@@ -258,22 +261,23 @@ Flow per round: orchestrator reads blackboard, writes snapshot into each sandbox
 ```bash
 # debate -- turn-based argumentation with shared blackboard transcript
 ivory research "topic" --template debate \
-  -a claude-opus,codex-5.3-xhigh,gemini-deep -s claude-opus \
+  -a opencode-haiku,opencode-gpt,opencode-wibey-opus -s opencode-wibey-opus \
   --sandbox local --rounds 5
 
 # map-reduce -- decompose, research subtopics in parallel, merge
 ivory research "topic" --template map-reduce \
-  -a claude-opus,codex-5.3-xhigh,gemini-deep,amp-deep -s claude-opus \
+  -a opencode-haiku,opencode-gpt,opencode-wibey-opus -s opencode-wibey-opus \
   --sandbox agentfs
 
 # red-blue -- adversarial team debate with cross-team isolation
 ivory research "topic" --template red-blue \
-  -a claude-opus,codex-5.3-xhigh,gemini-deep,amp-deep -s claude-opus \
-  --red-team claude-opus,codex-5.3-xhigh --blue-team gemini-deep,amp-deep \
+  -a opencode-haiku,opencode-gpt,opencode-wibey-opus,opencode-gpt-codex \
+  -s opencode-wibey-opus \
+  --red-team opencode-haiku,opencode-gpt --blue-team opencode-wibey-opus,opencode-gpt-codex \
   --sandbox daytona
 
 # query the sandbox audit trail (agentfs only)
-ivory audit research/20260301-143000-a1b2c3/ claude-opus
+ivory audit research/20260301-143000-a1b2c3/ opencode-haiku
 ```
 
 YAML templates can declare sandbox defaults that `--sandbox` overrides:
@@ -298,6 +302,9 @@ Each run produces a self-contained directory:
     phase1/                # initial research / seed reports
     phase2/                # cross-review / optimization artifacts
     phase3/final-report.md # synthesized report
+    sandboxes/             # per-agent isolated workspaces (with --sandbox local/agentfs/daytona)
+      agent-a/workspace/   #   audit copies of agent file operations
+      agent-b/workspace/
 ```
 
 ### Logging
@@ -333,7 +340,6 @@ Every strategy follows the same visual pattern:
 [HH:MM:SS] INFO    ▸ Agents: agent-a, agent-b
               ▸ Agents researching: agent-a, agent-b     # animated spinner
               ✔ Agents researching: agent-a, agent-b (45.2s)
-[HH:MM:SS] INFO    ▸ Counselors session complete, normalizing output
 [HH:MM:SS] INFO  ✔ Phase 1 complete (45.2s)             # phase footer
 
 [HH:MM:SS] INFO  ▶ Phase 2 -- Cross-Pollination
@@ -356,7 +362,7 @@ Every strategy follows the same visual pattern:
 
 | Strategy | Pipeline Header | Phase Headers | Step Detail | Spinners/Progress | Phase Footers | Pipeline Footer |
 |----------|----------------|---------------|-------------|-------------------|---------------|-----------------|
-| **council** | `run()` | Each `_run_phase{1,2,3}` | Agent lists, normalization | `phase_spinner`, `create_agent_progress` | Duration per phase | Duration total |
+| **council** | `run()` | Each `_run_phase{1,2,3}` | Agent lists, ACP session info | `phase_spinner`, `create_agent_progress` | Duration per phase | Duration total |
 | **adversarial** | `_run_adversarial_optimization` | Each `_run_*` method | Per-round scores, feedback, optimization progress | `phase_spinner` per judge/improve/optimize | Duration per phase | Duration total |
 | **debate** | `run()` | `GenericTemplateExecutor` per phase | Agent lists, isolation mode, round counts | `phase_spinner` per agent turn | Duration per phase | Duration total |
 | **map-reduce** | `run()` | `GenericTemplateExecutor` per phase | Agent lists, isolation mode, concurrency | `phase_spinner` for single-agent phases | Duration per phase | Duration total |
