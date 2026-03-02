@@ -1,0 +1,16 @@
+
+> build · claude-haiku-4-5-20251001
+
+→ Read research/20260302-023901-d0a99b/phase1/20260302-023901-d0a99b/prompt.md
+% WebFetch https://www.ably.io/topic/websockets
+% WebFetch https://www.ably.io/topic/server-sent-events
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/WebSocket
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events
+% WebFetch https://html.spec.whatwg.org/multipage/server-sent-events.html
+% WebFetch https://www.rfc-editor.org/rfc/rfc6455
+% WebFetch https://shopify.engineering/server-sent-events-data-streaming
+% WebFetch https://caniuse.com/websockets
+
+← Write research/20260302-023901-d0a99b/phase1/20260302-023901-d0a99b/research_report.md
+Wrote file successfully.
+

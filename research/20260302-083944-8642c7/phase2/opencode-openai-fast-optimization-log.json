@@ -1,0 +1,65 @@
+{
+  "agent": "opencode-openai-fast",
+  "judge": "",
+  "seed_score": 8.4,
+  "final_score": 8.4,
+  "rounds": 4,
+  "score_history": [
+    {
+      "round": 1,
+      "score": 8.4
+    },
+    {
+      "round": 2,
+      "score": 7.8
+    }
+  ],
+  "best_round": 1,
+  "improvement": "+0.0 (8.4 -> 8.4)",
+  "dimension_history": [
+    {
+      "round": 1,
+      "score": 8.4,
+      "dimensions": {
+        "factual_accuracy": 9,
+        "depth_of_analysis": 8,
+        "source_quality": 9,
+        "coverage_breadth": 8,
+        "analytical_rigor": 8
+      }
+    },
+    {
+      "round": 2,
+      "score": 8.1,
+      "dimensions": {
+        "factual_accuracy": 9,
+        "depth_of_analysis": 8,
+        "source_quality": 8,
+        "coverage_breadth": 8,
+        "analytical_rigor": 8
+      }
+    },
+    {
+      "round": 3,
+      "score": 8.5,
+      "dimensions": {
+        "factual_accuracy": 9,
+        "depth_of_analysis": 8.5,
+        "source_quality": 8.5,
+        "coverage_breadth": 8,
+        "analytical_rigor": 8.5
+      }
+    },
+    {
+      "round": 4,
+      "score": 7.8,
+      "dimensions": {
+        "factual_accuracy": 9,
+        "depth_of_analysis": 7,
+        "source_quality": 8,
+        "coverage_breadth": 8,
+        "analytical_rigor": 7
+      }
+    }
+  ]
+}

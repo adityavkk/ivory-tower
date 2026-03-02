@@ -763,6 +763,7 @@ class AdversarialStrategy:
                     "final_score": s.final_score,
                     "output": s.output,
                     "log": s.log,
+                    "dimension_history": s.dimension_history,
                 }
                 for name, s in opt.seeds.items()
             },
@@ -820,6 +821,7 @@ class AdversarialStrategy:
                     final_score=s.get("final_score"),
                     output=s.get("output", ""),
                     log=s.get("log", ""),
+                    dimension_history=s.get("dimension_history", []),
                 )
                 for name, s in opt_d.get("seeds", {}).items()
             },
@@ -952,6 +954,111 @@ class AdversarialStrategy:
             seed_result.status = PhaseStatus.RUNNING
 
             round_counter = [0]
+            feedback_history: list[dict] = []
+
+            # -- Direct LLM mode: use litellm instead of counselors --
+            if config.executor == "direct":
+                from ivory_tower.strategies.direct_llm import (
+                    make_direct_evaluator,
+                    make_direct_proposer,
+                )
+
+                direct_eval = make_direct_evaluator(
+                    agent=agent,
+                    judge=judge,
+                    model=config.model,
+                    api_base=config.api_base,
+                    topic=config.topic,
+                    judging_dir=judging_dir,
+                    round_counter=round_counter,
+                    seed_result=seed_result,
+                    build_judging_prompt=build_judging_prompt,
+                )
+                direct_prop = make_direct_proposer(
+                    agent=agent,
+                    judge=judge,
+                    model=config.model,
+                    api_base=config.api_base,
+                    topic=config.topic,
+                    judging_dir=judging_dir,
+                    phase2_dir=phase2_dir,
+                    seed_result=seed_result,
+                    feedback_history=feedback_history,
+                    config=config,
+                    build_judging_prompt=build_judging_prompt,
+                    build_improvement_prompt=build_improvement_prompt,
+                )
+
+                _GEPA_CALLS_PER_ITERATION = 3
+                metric_budget = 1 + max_rounds * _GEPA_CALLS_PER_ITERATION
+
+                def _unused_lm(prompt):  # pragma: no cover
+                    raise RuntimeError("reflection_lm not used with direct executor")
+
+                gepa_config = GEPAConfig(
+                    engine=EngineConfig(
+                        max_metric_calls=metric_budget,
+                        raise_on_exception=False,
+                        frontier_type="objective",
+                    ),
+                    reflection=ReflectionConfig(
+                        custom_candidate_proposer=direct_prop,
+                        reflection_lm=_unused_lm,
+                    ),
+                )
+
+                try:
+                    with phase_spinner(f"Optimizing {fmt_agent(agent)} [direct]..."):
+                        result = optimize_anything(
+                            seed_candidate={"report": seed_text},
+                            evaluator=direct_eval,
+                            objective=(
+                                "Optimize this research report for accuracy, depth, "
+                                "coverage, source quality, and analytical rigor"
+                            ),
+                            config=gepa_config,
+                        )
+
+                    best = result.best_candidate
+                    if isinstance(best, dict):
+                        optimized_text = best.get("report", seed_text)
+                    elif isinstance(best, str):
+                        optimized_text = best
+                    else:
+                        optimized_text = seed_text
+                    optimized_file = phase2_dir / f"{agent}-optimized.md"
+                    optimized_file.write_text(optimized_text)
+
+                    best_score = result.val_aggregate_scores[result.best_idx] if result.val_aggregate_scores else None
+                    seed_result.final_score = best_score
+                    seed_result.status = PhaseStatus.COMPLETE
+
+                    seed_score = seed_result.seed_score or 0.0
+                    final_score = best_score if best_score is not None else 0.0
+                    logger.info(
+                        fmt_ok("%s optimization done [direct]: [score]%s[/score] -> [score]%s[/score]"),
+                        fmt_agent(agent),
+                        fmt_score(seed_score),
+                        fmt_score(final_score),
+                    )
+                    self._save_optimization_log(
+                        run_dir, agent, result,
+                        dimension_history=seed_result.dimension_history,
+                    )
+
+                    if best_score is not None and seed_result.seed_score is not None:
+                        if best_score <= seed_result.seed_score:
+                            logger.warning(
+                                "[%s] No improvement: seed=%.1f final=%.1f",
+                                agent, seed_result.seed_score, best_score,
+                            )
+
+                except Exception:
+                    logger.exception("GEPA optimization failed for %s [direct]", agent)
+                    seed_result.status = PhaseStatus.FAILED
+
+                return
+            # -- End direct LLM mode --
 
             def evaluator(candidate: dict) -> tuple[float, dict]:
                 """Send candidate to opposing agent for judging."""
@@ -1020,11 +1127,30 @@ class AdversarialStrategy:
                         if texts:
                             asi["critique"] = "\n\n".join(texts)
 
+                # Inject 'scores' key for GEPA Pareto frontier tracking.
+                # GEPA recognizes asi["scores"] as a dict of named objectives
+                # for multi-objective optimization.  Without this, GEPA only
+                # sees the single aggregate float and degenerates to
+                # single-dimensional hill climbing.
+                dimensions = asi.get("dimensions", {})
+                if dimensions and isinstance(dimensions, dict):
+                    asi["scores"] = {k: float(v) for k, v in dimensions.items()
+                                     if isinstance(v, (int, float))}
+                else:
+                    asi["scores"] = {}
+
                 # Track seed score on first round
                 if round_num == 1:
                     seed_result.seed_score = score
 
                 seed_result.rounds_completed = round_num
+
+                # Record per-round dimension scores for manifest persistence.
+                seed_result.dimension_history.append({
+                    "round": round_num,
+                    "score": score,
+                    "dimensions": dict(dimensions) if dimensions else {},
+                })
 
                 logger.info(
                     fmt_bullet("%s Round %d  %s [score]%s[/score]"),
@@ -1104,7 +1230,15 @@ class AdversarialStrategy:
                     current_report=candidate.get("report", ""),
                     judge_feedback=feedback,
                     round_num=seed_result.rounds_completed + 1,
+                    feedback_history=feedback_history if feedback_history else None,
                 )
+
+                # Append current round's feedback to history for future rounds.
+                feedback_history.append({
+                    "round": seed_result.rounds_completed,
+                    "score": feedback.get("score", 0.0),
+                    "dimensions": feedback.get("dimensions", {}),
+                })
 
                 improve_dir = phase2_dir / f"{agent}-improve-round-{seed_result.rounds_completed + 1:02d}"
                 improve_dir.mkdir(parents=True, exist_ok=True)
@@ -1152,12 +1286,22 @@ class AdversarialStrategy:
             def _unused_lm(prompt):  # pragma: no cover
                 raise RuntimeError("reflection_lm should never be called when custom_candidate_proposer is set")
 
+            # GEPA's metric budget: 1 seed evaluation + up to 3 calls per
+            # improvement iteration (subsample of current, subsample of
+            # proposed, full valset if accepted).  Budget for the worst
+            # case (all proposals accepted) so max_rounds genuinely means
+            # the number of proposer invocations the user asked for.
+            _GEPA_CALLS_PER_ITERATION = 3
+            metric_budget = 1 + max_rounds * _GEPA_CALLS_PER_ITERATION
+
             gepa_config = GEPAConfig(
                 engine=EngineConfig(
-                    # +1 because GEPA uses one metric call to evaluate the
-                    # seed before any improvement rounds begin.
-                    max_metric_calls=max_rounds + 1,
+                    max_metric_calls=metric_budget,
                     raise_on_exception=False,
+                    # Enable per-dimension Pareto tracking.  With 'objective',
+                    # GEPA maintains a frontier entry per named score so
+                    # candidates excelling on different dimensions coexist.
+                    frontier_type="objective",
                 ),
                 reflection=ReflectionConfig(
                     custom_candidate_proposer=proposer,
@@ -1202,7 +1346,10 @@ class AdversarialStrategy:
                     fmt_score(seed_score),
                     fmt_score(final_score),
                 )
-                self._save_optimization_log(run_dir, agent, result)
+                self._save_optimization_log(
+                    run_dir, agent, result,
+                    dimension_history=seed_result.dimension_history,
+                )
                 logger.info("Optimization complete for %s: best_score=%s, rounds=%s",
                             agent, best_score, getattr(result, "total_metric_calls", "?"))
 
@@ -1347,11 +1494,21 @@ class AdversarialStrategy:
         manifest.save(run_dir / "manifest.json")
         return manifest
 
-    def _save_optimization_log(self, run_dir: Path, agent: str, result: Any) -> None:
+    def _save_optimization_log(
+        self,
+        run_dir: Path,
+        agent: str,
+        result: Any,
+        *,
+        dimension_history: list[dict] | None = None,
+    ) -> None:
         """Save optimization log JSON for one agent.
 
         Works with real GEPAResult (val_aggregate_scores, candidates, best_idx)
         and with mock results that may use different attribute names.
+
+        When *dimension_history* is provided, it is included in the log so
+        downstream consumers can see per-dimension score evolution.
         """
         phase2_dir = run_dir / "phase2"
 
@@ -1376,6 +1533,7 @@ class AdversarialStrategy:
             "score_history": score_history,
             "best_round": best_idx + 1,
             "improvement": f"+{final_score - seed_score:.1f} ({seed_score:.1f} -> {final_score:.1f})",
+            "dimension_history": dimension_history or [],
         }
 
         log_file = phase2_dir / f"{agent}-optimization-log.json"

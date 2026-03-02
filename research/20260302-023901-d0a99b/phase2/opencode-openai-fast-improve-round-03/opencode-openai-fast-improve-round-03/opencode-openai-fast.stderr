@@ -1,0 +1,24 @@
+
+> build · gpt-5.3-codex-spark
+
+→ Read research/20260302-023901-d0a99b/phase2/opencode-openai-fast-improve-round-03/opencode-openai-fast-improve-round-03/prompt.md
+% WebFetch https://html.spec.whatwg.org/multipage/server-sent-events.html
+% WebFetch https://www.rfc-editor.org/rfc/rfc6455
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/WebSocket
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events
+% WebFetch https://slack.engineering/migrating-millions-of-concurrent-websockets-to-envoy/
+% WebFetch https://ably.com/topic/websockets
+% WebFetch https://shopify.engineering/server-sent-events-data-streaming
+% WebFetch https://ably.com/topic/server-sent-events
+% WebFetch https://ably.com/topic/the-challenge-of-scaling-websockets
+% WebFetch https://engineering.linkedin.com/blog/2016/10/instant-messaging-at-linkedin--scaling-to-hundreds-of-thousands
+% WebFetch https://socket.io/docs/v4/client-api/
+% WebFetch https://docs.aiohttp.org/en/stable/client_quickstart.html#websocket-client
+% WebFetch https://websockets.readthedocs.io/
+% WebFetch https://github.com/gorilla/websocket
+% WebFetch https://github.com/nhooyr/websocket
+% WebFetch https://github.com/rexxars/eventsource-parser
+✗ webfetch failed
+Error: Request failed with status code: 404
+% WebFetch https://github.com/Yaffle/EventSource
+% WebFetch https://github.com/Azure/fetch-event-source

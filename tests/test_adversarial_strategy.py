@@ -415,6 +415,25 @@ class TestAdversarialPhaseSerialization:
         assert loaded.phases["adversarial_optimization"].seeds["agent-a"].rounds_completed == 3
         assert loaded.phases["adversarial_optimization"].seeds["agent-a"].final_score == 7.0
 
+    def test_roundtrip_preserves_dimension_history(self, tmp_path):
+        """dimension_history should survive manifest save/load roundtrip."""
+        m = _make_adversarial_manifest()
+        opt = m.phases["adversarial_optimization"]
+        history = [
+            {"round": 1, "score": 5.0, "dimensions": {"factual_accuracy": 5}},
+            {"round": 2, "score": 7.0, "dimensions": {"factual_accuracy": 8}},
+        ]
+        opt.seeds["agent-a"].dimension_history = history
+
+        path = tmp_path / "manifest.json"
+        m.save(path)
+        loaded = Manifest.load(path)
+
+        restored_hist = loaded.phases["adversarial_optimization"].seeds["agent-a"].dimension_history
+        assert len(restored_hist) == 2
+        assert restored_hist[0]["score"] == 5.0
+        assert restored_hist[1]["dimensions"]["factual_accuracy"] == 8
+
 
 # ---------------------------------------------------------------------------
 # Commit 9: AdversarialStrategy.run() -- full pipeline with mocked GEPA
@@ -435,6 +454,7 @@ def _fake_gepa_modules():
     class EngineConfig:
         max_metric_calls: int = 3
         raise_on_exception: bool = True
+        frontier_type: str | None = None
 
     @dataclass
     class ReflectionConfig:
@@ -821,6 +841,279 @@ class TestAdversarialEvaluatorAndProposer:
         judge_prompts = [p for p in prompt_texts if "judg" in p.lower() or "evaluat" in p.lower()]
         # At minimum we should have judging + improvement calls per agent
         assert len(prompt_texts) >= 4  # seed gen + judge + improve + synthesis (minimum)
+
+
+class TestGEPAConfigFrontierType:
+    """Gap 1 completion: GEPAConfig should set frontier_type='objective' for Pareto."""
+
+    def _setup_run_dir(self, tmp_path):
+        run_dir = tmp_path / "run-adv-001"
+        for d in ("phase1", "phase2", "phase3"):
+            (run_dir / d).mkdir(parents=True, exist_ok=True)
+        return run_dir
+
+    @patch("ivory_tower.strategies.adversarial._create_sandbox", side_effect=_fake_create_sandbox)
+    @patch("ivory_tower.strategies.adversarial._get_executor", side_effect=_fake_get_executor)
+    @patch("ivory_tower.strategies.adversarial._run_agent", side_effect=_fake_run_agent)
+    def test_gepa_config_sets_objective_frontier(self, mock_run, mock_exec, mock_sandbox, tmp_path):
+        """EngineConfig should set frontier_type='objective' for per-dimension Pareto."""
+        s = AdversarialStrategy()
+        config = _make_config(output_dir=tmp_path, max_rounds=1)
+        m = _make_adversarial_manifest(config)
+        run_dir = self._setup_run_dir(tmp_path)
+
+        gepa_mod, gepa_oa = _fake_gepa_modules()
+        captured_configs = []
+
+        def fake_optimize(seed_candidate, *, evaluator, objective=None, config=None, **kw):
+            captured_configs.append(config)
+            score, asi = evaluator(seed_candidate)
+            proposer_fn = config.reflection.custom_candidate_proposer
+            improved = proposer_fn(seed_candidate, {}, [])
+            return _make_optimize_result(improved, best_score=score)
+
+        gepa_oa.optimize_anything = MagicMock(side_effect=fake_optimize)
+
+        with _patch_gepa_import(gepa_mod, gepa_oa):
+            s.run(run_dir, config, m)
+
+        assert len(captured_configs) >= 2  # one per agent
+        for cfg in captured_configs:
+            assert cfg.engine.frontier_type == "objective", (
+                f"Expected frontier_type='objective', got {cfg.engine.frontier_type!r}"
+            )
+            # max_rounds=1 → 1 seed eval + 1 iteration * 3 calls = 4
+            assert cfg.engine.max_metric_calls == 1 + 1 * 3, (
+                f"Expected max_metric_calls=4, got {cfg.engine.max_metric_calls}"
+            )
+
+
+class TestProposerFeedbackHistory:
+    """Gap 4b: proposer accumulates and passes feedback history to improvement prompt."""
+
+    def _setup_run_dir(self, tmp_path):
+        run_dir = tmp_path / "run-adv-001"
+        for d in ("phase1", "phase2", "phase3"):
+            (run_dir / d).mkdir(parents=True, exist_ok=True)
+        return run_dir
+
+    @patch("ivory_tower.strategies.adversarial._create_sandbox", side_effect=_fake_create_sandbox)
+    @patch("ivory_tower.strategies.adversarial._get_executor", side_effect=_fake_get_executor)
+    @patch("ivory_tower.strategies.adversarial._run_agent", side_effect=_fake_run_agent)
+    def test_improvement_prompt_contains_score_trajectory(self, mock_run, mock_exec, mock_sandbox, tmp_path):
+        """After multiple rounds, the improvement prompt should include prior scores."""
+        s = AdversarialStrategy()
+        config = _make_config(output_dir=tmp_path, max_rounds=3)
+        m = _make_adversarial_manifest(config)
+        run_dir = self._setup_run_dir(tmp_path)
+
+        gepa_mod, gepa_oa = _fake_gepa_modules()
+        improve_prompts = []
+
+        def fake_optimize(seed_candidate, *, evaluator, objective=None, config=None, **kw):
+            proposer_fn = config.reflection.custom_candidate_proposer
+            current = seed_candidate
+            # Simulate 3 rounds: eval, propose, eval, propose, eval
+            for _i in range(3):
+                score, asi = evaluator(current)
+                current = proposer_fn(current, {"report": [asi]}, [])
+
+            # Collect improvement prompts from disk
+            phase2_dir = run_dir / "phase2"
+            for improve_dir in sorted(phase2_dir.glob("*-improve-round-*")):
+                pf = improve_dir / "improve-prompt.md"
+                if pf.exists():
+                    improve_prompts.append(pf.read_text())
+
+            return _make_optimize_result(current, best_score=7.0)
+
+        gepa_oa.optimize_anything = MagicMock(side_effect=fake_optimize)
+
+        with _patch_gepa_import(gepa_mod, gepa_oa):
+            s.run(run_dir, config, m)
+
+        # The later improvement prompts should contain "Score Trajectory"
+        # since feedback_history is accumulated across rounds
+        later_prompts = [p for p in improve_prompts if "Score Trajectory" in p]
+        assert len(later_prompts) > 0, (
+            "At least one improvement prompt should contain score trajectory "
+            f"from prior rounds. Got {len(improve_prompts)} prompts total."
+        )
+
+    @patch("ivory_tower.strategies.adversarial._create_sandbox", side_effect=_fake_create_sandbox)
+    @patch("ivory_tower.strategies.adversarial._get_executor", side_effect=_fake_get_executor)
+    @patch("ivory_tower.strategies.adversarial._run_agent", side_effect=_fake_run_agent)
+    def test_first_round_prompt_has_no_trajectory(self, mock_run, mock_exec, mock_sandbox, tmp_path):
+        """The first improvement prompt should not have a trajectory section."""
+        s = AdversarialStrategy()
+        config = _make_config(output_dir=tmp_path, max_rounds=2)
+        m = _make_adversarial_manifest(config)
+        run_dir = self._setup_run_dir(tmp_path)
+
+        gepa_mod, gepa_oa = _fake_gepa_modules()
+        first_prompts = []
+
+        def fake_optimize(seed_candidate, *, evaluator, objective=None, config=None, **kw):
+            proposer_fn = config.reflection.custom_candidate_proposer
+            score, asi = evaluator(seed_candidate)
+            improved = proposer_fn(seed_candidate, {}, [])
+
+            # Collect first improvement prompt
+            phase2_dir = run_dir / "phase2"
+            for improve_dir in sorted(phase2_dir.glob("*-improve-round-*")):
+                pf = improve_dir / "improve-prompt.md"
+                if pf.exists():
+                    first_prompts.append(pf.read_text())
+
+            return _make_optimize_result(improved, best_score=score)
+
+        gepa_oa.optimize_anything = MagicMock(side_effect=fake_optimize)
+
+        with _patch_gepa_import(gepa_mod, gepa_oa):
+            s.run(run_dir, config, m)
+
+        # First prompt should NOT have trajectory (no prior rounds)
+        for prompt in first_prompts:
+            assert "Score Trajectory" not in prompt
+
+
+class TestEvaluatorParetoScores:
+    """Gap 1: evaluator ASI must include 'scores' key for GEPA Pareto tracking."""
+
+    def _setup_run_dir(self, tmp_path):
+        run_dir = tmp_path / "run-adv-001"
+        for d in ("phase1", "phase2", "phase3"):
+            (run_dir / d).mkdir(parents=True, exist_ok=True)
+        return run_dir
+
+    @patch("ivory_tower.strategies.adversarial._create_sandbox", side_effect=_fake_create_sandbox)
+    @patch("ivory_tower.strategies.adversarial._get_executor", side_effect=_fake_get_executor)
+    @patch("ivory_tower.strategies.adversarial._run_agent")
+    def test_evaluator_asi_contains_scores_key(self, mock_run, mock_exec, mock_sandbox, tmp_path):
+        """Evaluator should include asi['scores'] mirroring dimension scores."""
+        s = AdversarialStrategy()
+        config = _make_config(output_dir=tmp_path, max_rounds=1)
+        m = _make_adversarial_manifest(config)
+        run_dir = self._setup_run_dir(tmp_path)
+
+        judge_data = {
+            "overall_score": 7.0,
+            "dimensions": {
+                "factual_accuracy": 8,
+                "depth_of_analysis": 7,
+                "source_quality": 6,
+                "coverage_breadth": 7,
+                "analytical_rigor": 7,
+            },
+            "strengths": ["good"],
+            "weaknesses": ["needs work"],
+            "suggestions": ["improve"],
+            "critique": "decent report",
+        }
+
+        def custom_run_agent(executor, sandbox, agent_name, prompt, output_dir, verbose=False):
+            if "judg" in prompt.lower() or "evaluat" in prompt.lower():
+                return AgentOutput(
+                    report_path=f"{output_dir}/{agent_name}-report.md",
+                    raw_output=json.dumps(judge_data),
+                    duration_seconds=1.0,
+                    metadata={"protocol": "mock"},
+                )
+            return AgentOutput(
+                report_path=f"{output_dir}/{agent_name}-report.md",
+                raw_output=f"Report by {agent_name}",
+                duration_seconds=1.0,
+                metadata={"protocol": "mock"},
+            )
+
+        mock_run.side_effect = custom_run_agent
+
+        gepa_mod, gepa_oa = _fake_gepa_modules()
+        evaluator_tracker = []
+
+        def fake_optimize(seed_candidate, *, evaluator, objective=None, config=None, **kw):
+            score, asi = evaluator(seed_candidate)
+            evaluator_tracker.append({"score": score, "asi": asi})
+            proposer_fn = config.reflection.custom_candidate_proposer
+            improved = proposer_fn(seed_candidate, {}, [])
+            return _make_optimize_result(improved, best_score=score)
+
+        gepa_oa.optimize_anything = MagicMock(side_effect=fake_optimize)
+
+        with _patch_gepa_import(gepa_mod, gepa_oa):
+            s.run(run_dir, config, m)
+
+        assert len(evaluator_tracker) >= 2
+        for entry in evaluator_tracker:
+            asi = entry["asi"]
+            # Must have 'scores' key for GEPA Pareto tracking
+            assert "scores" in asi, "ASI must include 'scores' key for GEPA Pareto frontiers"
+            scores = asi["scores"]
+            # Scores should mirror dimension values as floats
+            assert "factual_accuracy" in scores
+            assert "depth_of_analysis" in scores
+            assert "source_quality" in scores
+            assert "coverage_breadth" in scores
+            assert "analytical_rigor" in scores
+            # Values should be numeric floats
+            for dim, val in scores.items():
+                assert isinstance(val, float), f"scores[{dim!r}] should be float, got {type(val)}"
+
+    @patch("ivory_tower.strategies.adversarial._create_sandbox", side_effect=_fake_create_sandbox)
+    @patch("ivory_tower.strategies.adversarial._get_executor", side_effect=_fake_get_executor)
+    @patch("ivory_tower.strategies.adversarial._run_agent")
+    def test_evaluator_scores_empty_when_no_dimensions(self, mock_run, mock_exec, mock_sandbox, tmp_path):
+        """When judge returns no dimensions, scores should still be present but empty."""
+        s = AdversarialStrategy()
+        config = _make_config(output_dir=tmp_path, max_rounds=1)
+        m = _make_adversarial_manifest(config)
+        run_dir = self._setup_run_dir(tmp_path)
+
+        judge_data = {
+            "overall_score": 5.0,
+            "dimensions": {},
+            "strengths": [],
+            "weaknesses": [],
+            "suggestions": [],
+            "critique": "ok",
+        }
+
+        def custom_run_agent(executor, sandbox, agent_name, prompt, output_dir, verbose=False):
+            if "judg" in prompt.lower() or "evaluat" in prompt.lower():
+                return AgentOutput(
+                    report_path=f"{output_dir}/{agent_name}-report.md",
+                    raw_output=json.dumps(judge_data),
+                    duration_seconds=1.0,
+                    metadata={"protocol": "mock"},
+                )
+            return AgentOutput(
+                report_path=f"{output_dir}/{agent_name}-report.md",
+                raw_output=f"Report by {agent_name}",
+                duration_seconds=1.0,
+                metadata={"protocol": "mock"},
+            )
+
+        mock_run.side_effect = custom_run_agent
+
+        gepa_mod, gepa_oa = _fake_gepa_modules()
+        evaluator_tracker = []
+
+        def fake_optimize(seed_candidate, *, evaluator, objective=None, config=None, **kw):
+            score, asi = evaluator(seed_candidate)
+            evaluator_tracker.append({"score": score, "asi": asi})
+            proposer_fn = config.reflection.custom_candidate_proposer
+            improved = proposer_fn(seed_candidate, {}, [])
+            return _make_optimize_result(improved, best_score=score)
+
+        gepa_oa.optimize_anything = MagicMock(side_effect=fake_optimize)
+
+        with _patch_gepa_import(gepa_mod, gepa_oa):
+            s.run(run_dir, config, m)
+
+        for entry in evaluator_tracker:
+            asi = entry["asi"]
+            assert "scores" in asi
+            assert asi["scores"] == {}
 
 
 class TestAdversarialRegistration:

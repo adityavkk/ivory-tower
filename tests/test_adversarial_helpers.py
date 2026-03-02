@@ -142,6 +142,58 @@ class TestExtractFeedbackFromReflectiveDataset:
         result2 = extract_feedback_from_reflective_dataset({})
         assert result["score"] == 0.0 or result2["score"] == 0.0
 
+    def test_dataset_with_scores_key(self):
+        """Gap 3: reflective_dataset entries now include 'scores' from evaluator ASI."""
+        dataset = {
+            "report": [
+                {
+                    "score": 6.5,
+                    "dimensions": {
+                        "factual_accuracy": 7,
+                        "depth_of_analysis": 6,
+                        "source_quality": 5,
+                        "coverage_breadth": 7,
+                        "analytical_rigor": 6,
+                    },
+                    "scores": {
+                        "factual_accuracy": 7.0,
+                        "depth_of_analysis": 6.0,
+                        "source_quality": 5.0,
+                        "coverage_breadth": 7.0,
+                        "analytical_rigor": 6.0,
+                    },
+                    "strengths": ["good coverage"],
+                    "weaknesses": ["weak sources"],
+                    "suggestions": ["add refs"],
+                    "critique": "decent report",
+                },
+            ]
+        }
+        result = extract_feedback_from_reflective_dataset(dataset)
+        assert result["score"] == 6.5
+        assert result["dimensions"]["factual_accuracy"] == 7
+        assert result["strengths"] == ["good coverage"]
+        assert result["weaknesses"] == ["weak sources"]
+
+    def test_dataset_score_from_dimension_average(self):
+        """When no explicit score, should compute from dimension scores."""
+        dataset = {
+            "report": [
+                {
+                    "dimensions": {
+                        "factual_accuracy": 8,
+                        "depth_of_analysis": 6,
+                    },
+                    "strengths": [],
+                    "weaknesses": [],
+                    "suggestions": [],
+                    "critique": "",
+                },
+            ]
+        }
+        result = extract_feedback_from_reflective_dataset(dataset)
+        assert result["score"] == 7.0  # (8 + 6) / 2
+
 
 class TestLlmExtractJson:
     """Tests for _llm_extract_json (parse-agent fallback)."""

@@ -105,6 +105,18 @@ def research(
         Optional[str],
         typer.Option("--blue-team", help="Comma-separated agent specs for blue team"),
     ] = None,
+    executor: Annotated[
+        str,
+        typer.Option("--executor", help="Agent executor: counselors (default) or direct (litellm)"),
+    ] = "counselors",
+    model: Annotated[
+        Optional[str],
+        typer.Option("--model", help="LLM model ID for direct executor (e.g. openai/claude-sonnet-4)"),
+    ] = None,
+    api_base: Annotated[
+        Optional[str],
+        typer.Option("--api-base", help="API base URL for direct executor (e.g. http://127.0.0.1:8112/v1)"),
+    ] = None,
 ) -> None:
     """Run a multi-agent deep research pipeline on a topic."""
     # -- sandbox validation --
@@ -171,12 +183,17 @@ def research(
         typer.echo("Error: no topic provided. Pass as argument, --file, or pipe to stdin.", err=True)
         raise typer.Exit(code=1)
 
+
     # -- parse agent specs (support @profile-name, model:role, model) --
     agent_specs = [a.strip() for a in agents.split(",")]
     agent_list = []
     for spec in agent_specs:
-        profile = AgentProfile.from_cli_shorthand(spec)
-        agent_list.append(profile.model or profile.name)
+        if executor == "direct":
+            # Direct executor: agent names are labels, not counselors IDs
+            agent_list.append(spec)
+        else:
+            profile = AgentProfile.from_cli_shorthand(spec)
+            agent_list.append(profile.model or profile.name)
 
     # -- validate agent configs --
     all_agents = agent_list + [synthesizer]
@@ -231,6 +248,9 @@ def research(
         red_team=parsed_red_team,
         blue_team=parsed_blue_team,
         stream=stream,
+        executor=executor,
+        model=model,
+        api_base=api_base,
     )
 
     if dry_run:

@@ -1,0 +1,20 @@
+
+> build · gpt-5.3-codex-spark
+
+→ Read research/20260302-083944-8642c7/phase1/20260302-083944-8642c7/prompt.md
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/WebSocket
+% WebFetch https://html.spec.whatwg.org/multipage/server-sent-events.html
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/EventSource
+% WebFetch https://www.rfc-editor.org/rfc/rfc6455
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events
+% WebFetch https://developers.cloudflare.com/workers/runtime-apis/websockets/
+% WebFetch https://nginx.org/en/docs/http/websocket.html
+% WebFetch https://nginx.org/en/docs/http/ngx_http_proxy_module.html
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API
+% WebFetch https://caniuse.com/websockets
+% WebFetch https://caniuse.com/eventsource
+% WebFetch https://www.rfc-editor.org/rfc/rfc8441
+% WebFetch https://developers.cloudflare.com/workers/platform/limits/
+% WebFetch https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-target-groups.html
+% WebFetch https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-websockets.html

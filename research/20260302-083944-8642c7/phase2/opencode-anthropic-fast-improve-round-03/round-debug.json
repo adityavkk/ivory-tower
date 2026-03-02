@@ -1,0 +1,27 @@
+{
+  "agent": "opencode-anthropic-fast",
+  "round": 3,
+  "feedback_score": 6.8,
+  "feedback_dimensions": {
+    "factual_accuracy": 7,
+    "depth_of_analysis": 8,
+    "source_quality": 6,
+    "coverage_breadth": 7,
+    "analytical_rigor": 6
+  },
+  "feedback_strengths": [
+    "Clear structure by dimension and strong comparative framing around protocol mechanics (handshake/upgraded framing vs HTTP text stream).",
+    "Actionable decision guidance in the 'When to Choose' sections helps translate theory into engineering trade-offs.",
+    "Good inclusion of resilience details for SSE (`id`, `retry`, `Last-Event-ID`) and explicit one-way vs two-way distinction.",
+    "Covers important practical topics: proxy/firewall behavior, reconnection, security, and event multiplexing.",
+    "Provides open questions that acknowledge current uncertainty rather than over-claiming completeness."
+  ],
+  "feedback_weaknesses": [
+    "No inline citations or section-level evidence links, so claims like browser support timelines, binary framing overhead, and resource usage are not directly verifiable from this artifact.",
+    "Source list includes Wikipedia and claims up-to-date support coverage but no explicit verification against current browser/intermediary status snapshots.",
+    "Some technical assertions are simplified or potentially misleading: e.g., HTTP/2 semantics in SSE/CDN contexts and proxy handling of WebSocket still depends on deployment-specific proxy behavior; these should be qualified more rigorously.",
+    "Source Quality is uneven: authoritative primary standards are present, but the report does not differentiate primary protocol claims vs secondary interpretation, and one source is a tertiary historical summary.",
+    "Analytical rigor is uneven: it recommends choices but rarely quantifies trade-offs (e.g., latency, connection limits, CPU/memory) with scenario-based constraints or decision thresholds."
+  ],
+  "candidate_report_length": 14761
+}

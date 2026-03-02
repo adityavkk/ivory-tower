@@ -158,6 +158,81 @@ class TestBuildImprovementPrompt:
         assert "(no critique provided)" in result
 
 
+class TestBuildImprovementPromptEvolution:
+    """Gap 4: improvement prompts evolve across rounds."""
+
+    def test_score_trajectory_shown_when_history_provided(self):
+        from ivory_tower.prompts import build_improvement_prompt
+        history = [
+            {"round": 1, "score": 5.0, "dimensions": {"factual_accuracy": 5, "depth_of_analysis": 4}},
+            {"round": 2, "score": 6.2, "dimensions": {"factual_accuracy": 6, "depth_of_analysis": 5}},
+        ]
+        feedback = {
+            "score": 6.8,
+            "dimensions": {"factual_accuracy": 7, "depth_of_analysis": 5, "source_quality": 6,
+                           "coverage_breadth": 7, "analytical_rigor": 7},
+            "strengths": ["good"], "weaknesses": ["weak depth"],
+            "suggestions": ["go deeper"], "critique": "ok",
+        }
+        result = build_improvement_prompt("AI", "report", feedback, 3, feedback_history=history)
+        # Should contain score trajectory
+        assert "5.0" in result
+        assert "6.2" in result
+        assert "6.8" in result
+
+    def test_weakest_dimension_highlighted(self):
+        from ivory_tower.prompts import build_improvement_prompt
+        feedback = {
+            "score": 6.0,
+            "dimensions": {"factual_accuracy": 8, "depth_of_analysis": 3,
+                           "source_quality": 7, "coverage_breadth": 6, "analytical_rigor": 7},
+            "strengths": [], "weaknesses": [], "suggestions": [], "critique": "ok",
+        }
+        result = build_improvement_prompt("AI", "report", feedback, 2)
+        # Should call out the weakest dimension
+        assert "depth_of_analysis" in result.lower() or "Depth of Analysis" in result
+
+    def test_failure_mode_framing_when_score_below_4(self):
+        from ivory_tower.prompts import build_improvement_prompt
+        feedback = {
+            "score": 2.0,
+            "dimensions": {"factual_accuracy": 2, "depth_of_analysis": 2,
+                           "source_quality": 1, "coverage_breadth": 3, "analytical_rigor": 2},
+            "strengths": [], "weaknesses": ["not a report"],
+            "suggestions": ["write an actual report"], "critique": "This is workflow notes.",
+        }
+        result = build_improvement_prompt("AI", "report", feedback, 2)
+        # Should contain failure-mode language, not the normal "STRICTLY BETTER" framing
+        assert "fundamental" in result.lower() or "start fresh" in result.lower() or "not meeting" in result.lower()
+
+    def test_no_history_no_trajectory_section(self):
+        from ivory_tower.prompts import build_improvement_prompt
+        feedback = {
+            "score": 7.0,
+            "dimensions": {"factual_accuracy": 7, "depth_of_analysis": 7,
+                           "source_quality": 7, "coverage_breadth": 7, "analytical_rigor": 7},
+            "strengths": ["good"], "weaknesses": [], "suggestions": [], "critique": "ok",
+        }
+        result = build_improvement_prompt("AI", "report", feedback, 1)
+        # Without history, trajectory section should not appear
+        assert "Score Trajectory" not in result or "Round 1" in result
+
+    def test_backward_compatible_without_history_kwarg(self):
+        """Existing callers without feedback_history should still work."""
+        from ivory_tower.prompts import build_improvement_prompt
+        feedback = {
+            "score": 5.0,
+            "dimensions": {"factual_accuracy": 6, "depth_of_analysis": 5,
+                           "source_quality": 4, "coverage_breadth": 5, "analytical_rigor": 5},
+            "strengths": ["good structure"], "weaknesses": ["weak sources"],
+            "suggestions": ["add refs"], "critique": "Needs depth.",
+        }
+        # Call without feedback_history -- must not raise
+        result = build_improvement_prompt("AI safety", "current report", feedback, 3)
+        assert "Round 3" in result
+        assert "5.0/10" in result
+
+
 class TestBuildAdversarialSynthesisPrompt:
     def test_contains_all_parts(self):
         from ivory_tower.prompts import build_adversarial_synthesis_prompt

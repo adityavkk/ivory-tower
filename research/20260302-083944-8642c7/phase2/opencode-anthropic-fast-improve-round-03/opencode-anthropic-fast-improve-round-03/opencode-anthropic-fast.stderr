@@ -1,0 +1,34 @@
+
+> build · claude-haiku-4-5-20251001
+
+→ Read research/20260302-083944-8642c7/phase2/opencode-anthropic-fast-improve-round-03/opencode-anthropic-fast-improve-round-03/prompt.md
+
+# Todos
+[ ] Conduct web research to find concrete metrics, benchmarks, and recent data on WebSocket vs SSE (latency, throughput, connection costs)
+[ ] Research current browser support status and proxy/firewall behavior with specific evidence
+[ ] Find concrete architecture examples with real connection counts and failure scenarios
+[ ] Create comparison matrix with measurable criteria and decision thresholds
+[ ] Add inline citations and verify claims against authoritative sources
+[ ] Write improved report with all feedback addressed
+
+% WebFetch https://www.rfc-editor.org/rfc/rfc6455
+% WebFetch https://html.spec.whatwg.org/multipage/server-sent-events.html
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/WebSocket
+% WebFetch https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events
+% WebFetch https://en.wikipedia.org/wiki/WebSocket
+
+# Todos
+[x] Conduct web research to find concrete metrics, benchmarks, and recent data on WebSocket vs SSE (latency, throughput, connection costs)
+[ ] Create comparison matrix with measurable criteria and decision thresholds
+[ ] Add inline citations and verify claims against authoritative sources
+[ ] Write improved report with all feedback addressed
+
+← Write research/improved_websocket_vs_sse_report.md
+Wrote file successfully.
+
+# Todos
+[x] Conduct web research to find concrete metrics, benchmarks, and recent data on WebSocket vs SSE (latency, throughput, connection costs)
+[x] Create comparison matrix with measurable criteria and decision thresholds
+[x] Add inline citations and verify claims against authoritative sources
+[x] Write improved report with all feedback addressed
+

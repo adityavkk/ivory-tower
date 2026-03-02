@@ -12,6 +12,8 @@ dependencies = [
 
 [project.optional-dependencies]
 adversarial = ["gepa>=0.1.0"]
+direct = ["litellm>=1.0"]
+all = ["gepa>=0.1.0", "litellm>=1.0"]
 
 [project.scripts]
 ivory = "ivory_tower.cli:app"

@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-03-02T08:45:11.673Z",
+  "slug": "round-04-opencode-anthropic-fast-judges-",
+  "prompt": "file:judge-prompt.md",
+  "promptSource": "file",
+  "readOnlyPolicy": "bestEffort",
+  "tools": [
+    {
+      "toolId": "opencode-anthropic-fast",
+      "status": "success",
+      "exitCode": 0,
+      "durationMs": 23559,
+      "wordCount": 970,
+      "outputFile": "/Users/auk000v/dev/tools/ivory-tower-gepa-fixes/research/20260302-083944-8642c7/phase2/judging/round-04-opencode-anthropic-fast-judges-opencode-openai-fast/round-04-opencode-anthropic-fast-judges-/opencode-anthropic-fast.md",
+      "stderrFile": "/Users/auk000v/dev/tools/ivory-tower-gepa-fixes/research/20260302-083944-8642c7/phase2/judging/round-04-opencode-anthropic-fast-judges-opencode-openai-fast/round-04-opencode-anthropic-fast-judges-/opencode-anthropic-fast.stderr"
+    }
+  ]
+}

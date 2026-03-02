@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-03-02T08:42:32.561Z",
+  "slug": "round-03-opencode-openai-fast-judges-ope",
+  "prompt": "file:judge-prompt.md",
+  "promptSource": "file",
+  "readOnlyPolicy": "bestEffort",
+  "tools": [
+    {
+      "toolId": "opencode-openai-fast",
+      "status": "success",
+      "exitCode": 0,
+      "durationMs": 8315,
+      "wordCount": 563,
+      "outputFile": "/Users/auk000v/dev/tools/ivory-tower-gepa-fixes/research/20260302-083944-8642c7/phase2/judging/round-03-opencode-openai-fast-judges-opencode-anthropic-fast/round-03-opencode-openai-fast-judges-ope/opencode-openai-fast.md",
+      "stderrFile": "/Users/auk000v/dev/tools/ivory-tower-gepa-fixes/research/20260302-083944-8642c7/phase2/judging/round-03-opencode-openai-fast-judges-opencode-anthropic-fast/round-03-opencode-openai-fast-judges-ope/opencode-openai-fast.stderr"
+    }
+  ]
+}

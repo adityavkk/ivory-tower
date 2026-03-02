@@ -315,6 +315,24 @@ class TestSeedOptimizationResult:
         )
         assert r.final_score == 8.3
 
+    def test_dimension_history_default_empty(self):
+        r = SeedOptimizationResult(status=PhaseStatus.PENDING, judge="agent-b")
+        assert r.dimension_history == []
+
+    def test_dimension_history_populated(self):
+        history = [
+            {"round": 1, "score": 5.0, "dimensions": {"factual_accuracy": 5, "depth_of_analysis": 4}},
+            {"round": 2, "score": 6.5, "dimensions": {"factual_accuracy": 7, "depth_of_analysis": 5}},
+        ]
+        r = SeedOptimizationResult(
+            status=PhaseStatus.COMPLETE,
+            judge="agent-b",
+            dimension_history=history,
+        )
+        assert len(r.dimension_history) == 2
+        assert r.dimension_history[0]["score"] == 5.0
+        assert r.dimension_history[1]["dimensions"]["factual_accuracy"] == 7
+
 
 # --- AdversarialOptimizationPhase ---
 

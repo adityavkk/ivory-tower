@@ -68,6 +68,7 @@ class SeedOptimizationResult:
     final_score: float | None = None
     output: str = ""
     log: str = ""
+    dimension_history: list[dict] = field(default_factory=list)
 
 
 @dataclass
