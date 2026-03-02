@@ -1,0 +1,50 @@
+{
+  "agent": "opencode-anthropic-fast",
+  "judge": "",
+  "seed_score": 6.8,
+  "final_score": 6.8,
+  "rounds": 3,
+  "score_history": [
+    {
+      "round": 1,
+      "score": 6.8
+    }
+  ],
+  "best_round": 1,
+  "improvement": "+0.0 (6.8 -> 6.8)",
+  "dimension_history": [
+    {
+      "round": 1,
+      "score": 6.8,
+      "dimensions": {
+        "factual_accuracy": 7,
+        "depth_of_analysis": 8,
+        "source_quality": 6,
+        "coverage_breadth": 7,
+        "analytical_rigor": 6
+      }
+    },
+    {
+      "round": 2,
+      "score": 7.2,
+      "dimensions": {
+        "factual_accuracy": 7,
+        "depth_of_analysis": 8,
+        "source_quality": 6,
+        "coverage_breadth": 8,
+        "analytical_rigor": 7
+      }
+    },
+    {
+      "round": 3,
+      "score": 2.6,
+      "dimensions": {
+        "factual_accuracy": 4,
+        "depth_of_analysis": 3,
+        "source_quality": 1,
+        "coverage_breadth": 2,
+        "analytical_rigor": 3
+      }
+    }
+  ]
+}

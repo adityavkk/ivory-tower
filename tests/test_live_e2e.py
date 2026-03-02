@@ -104,7 +104,7 @@ class TestAdversarialLiveE2E:
                 synthesizer=SYNTHESIZER,
                 output_dir=RESEARCH_DIR,
                 strategy="adversarial",
-                max_rounds=2,
+                max_rounds=3,
                 verbose=True,
             )
             TestAdversarialLiveE2E._run_dir = run_pipeline(config)
@@ -239,7 +239,7 @@ class TestAdversarialLiveE2E:
             assert isinstance(seed.dimension_history, list), (
                 f"{agent} dimension_history is not a list"
             )
-            # With max_rounds=2, GEPA makes 3 evaluator calls (1 seed + 2 rounds)
+            # With max_rounds=3, GEPA makes up to 4 evaluator calls (1 seed + 3 rounds)
             assert len(seed.dimension_history) >= 1, (
                 f"{agent} dimension_history is empty -- evaluator didn't record rounds"
             )
@@ -266,7 +266,7 @@ class TestAdversarialLiveE2E:
                     )
 
     def test_dimension_history_shows_score_movement(self, run_dir: Path):
-        """With max_rounds=2 and non-zero scores, we should see multiple rounds."""
+        """With max_rounds=3 and non-zero scores, we should see multiple rounds."""
         m = Manifest.load(run_dir / "manifest.json")
         opt_phase = m.phases["adversarial_optimization"]
         any_multi_round = False
@@ -289,8 +289,8 @@ class TestAdversarialLiveE2E:
         phase2 = run_dir / "phase2"
         for agent in (AGENT_A, AGENT_B):
             improve_dirs = sorted(phase2.glob(f"{agent}-improve-round-*"))
-            # With max_rounds=2 we expect at least 1 improvement round
-            # (GEPA uses 1 call for seed eval, leaving up to 2 for improvement)
+            # With max_rounds=3 we expect at least 1 improvement round
+            # (GEPA uses 1 call for seed eval, leaving up to 3 for improvement)
             if not improve_dirs:
                 # If no improvement dirs, check if this agent had non-zero seed score
                 # (agents with 0.0 seed may not get improvement rounds)
@@ -305,36 +305,48 @@ class TestAdversarialLiveE2E:
                     f"Improvement prompt in {d.name} too short"
                 )
 
-    def test_improvement_prompt_round2_has_trajectory(self, run_dir: Path):
-        """Round 2+ improvement prompts should contain a Score Trajectory section."""
+    def test_improvement_prompt_has_trajectory(self, run_dir: Path):
+        """Second and later improvement prompts should contain a Score Trajectory.
+
+        With max_rounds=3, GEPA calls the proposer up to 3 times.  The first
+        proposer call has empty feedback_history (no trajectory). The second
+        and later calls should include "Score Trajectory" showing prior rounds.
+        Improvement dirs are named ``{agent}-improve-round-NN`` where NN is
+        the GEPA round counter (not the improvement-call ordinal).
+        """
         phase2 = run_dir / "phase2"
         found_trajectory = False
         for agent in (AGENT_A, AGENT_B):
-            # Look for round 2+ improvement dirs (round 1 has no trajectory)
-            round2_dirs = sorted(phase2.glob(f"{agent}-improve-round-0[2-9]"))
-            for d in round2_dirs:
+            improve_dirs = sorted(phase2.glob(f"{agent}-improve-round-*"))
+            if len(improve_dirs) < 2:
+                # Need at least 2 improvement dirs to test trajectory
+                continue
+            # Skip the first improvement dir (no trajectory), check the rest
+            for d in improve_dirs[1:]:
                 prompt_file = d / "improve-prompt.md"
                 if prompt_file.exists():
                     prompt_text = prompt_file.read_text()
                     if "Score Trajectory" in prompt_text:
                         found_trajectory = True
-                        # Trajectory should contain "Round" references
                         assert "Round" in prompt_text, (
                             f"Score Trajectory in {d.name} has no Round entries"
                         )
         if not found_trajectory:
-            # Check if any agent even had a round 2
-            any_round2 = any(
-                list(phase2.glob(f"{a}-improve-round-0[2-9]"))
+            # Check if any agent had 2+ improvement dirs
+            any_multi = any(
+                len(list(phase2.glob(f"{a}-improve-round-*"))) >= 2
                 for a in (AGENT_A, AGENT_B)
             )
-            if any_round2:
+            if any_multi:
                 pytest.fail(
-                    "Round 2+ improvement prompts exist but none contain "
-                    "a 'Score Trajectory' section"
+                    "Multiple improvement rounds exist but none after the "
+                    "first contain a 'Score Trajectory' section"
                 )
             else:
-                pytest.skip("No round 2 improvement dirs found (may need --max-rounds 3)")
+                pytest.skip(
+                    "No agent had 2+ improvement rounds -- "
+                    "trajectory requires at least 2 proposer calls"
+                )
 
     def test_improvement_prompt_has_dimension_focus(self, run_dir: Path):
         """Improvement prompts should highlight the weakest dimension."""

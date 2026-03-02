@@ -1,0 +1,48 @@
+
+> build · claude-haiku-4-5-20251001
+
+→ Read research/20260302-023901-d0a99b/phase2/opencode-anthropic-fast-improve-round-03/opencode-anthropic-fast-improve-round-03/prompt.md
+
+# Todos
+[ ] Research and verify source quality issues: support percentages, latency figures, cost numbers, temporal claims
+[ ] Conduct web research for post-2024 evaluations and independent benchmarks
+[ ] Strengthen source mix with standards docs and reduce vendor bias
+[ ] Add test-backed comparison matrix for workload profiles
+[ ] Refine scalability section with precise connection state model
+[ ] Add deployment section on network intermediaries and edge behavior
+[ ] Fix overgeneralized SSE statelessness claims with nuance
+[ ] Add operational risks section covering backpressure, HTTP/2/3 effects, reconnection consistency
+[ ] Write improved report document
+
+% WebFetch https://www.rfc-editor.org/rfc/rfc6455
+% WebFetch https://caniuse.com/websockets
+% WebFetch https://html.spec.whatwg.org/multipage/server-sent-events.html
+
+# Todos
+[ ] Research and verify source quality issues: support percentages, latency figures, cost numbers, temporal claims
+[ ] Conduct web research for post-2024 evaluations and independent benchmarks
+[ ] Strengthen source mix with standards docs and reduce vendor bias
+[ ] Add test-backed comparison matrix for workload profiles
+[ ] Refine scalability section with precise connection state model
+[ ] Add deployment section on network intermediaries and edge behavior
+[ ] Fix overgeneralized SSE statelessness claims with nuance
+[ ] Add operational risks section covering backpressure, HTTP/2/3 effects, reconnection consistency
+[ ] Write improved report document
+
+% WebFetch https://shopify.engineering/server-sent-events-data-streaming
+% WebFetch https://slack.engineering/migrating-millions-of-concurrent-websockets-to-envoy/
+% WebFetch https://www.ably.io/topic/websockets
+
+# Todos
+[x] Research and verify source quality issues: support percentages, latency figures, cost numbers, temporal claims
+[ ] Conduct web research for post-2024 evaluations and independent benchmarks
+[ ] Strengthen source mix with standards docs and reduce vendor bias
+[ ] Add test-backed comparison matrix for workload profiles
+[ ] Refine scalability section with precise connection state model
+[ ] Add deployment section on network intermediaries and edge behavior
+[ ] Fix overgeneralized SSE statelessness claims with nuance
+[ ] Add operational risks section covering backpressure, HTTP/2/3 effects, reconnection consistency
+[ ] Write improved report document
+
+✗ write failed
+Error: Tool execution aborted

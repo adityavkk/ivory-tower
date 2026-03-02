@@ -1,0 +1,142 @@
+{
+  "run_id": "20260302-023901-d0a99b",
+  "strategy": "adversarial",
+  "topic": "Compare WebSocket vs Server-Sent Events (SSE) for real-time web applications. Cover: protocol differences, browser support, scalability trade-offs, and when to choose each.",
+  "agents": [
+    "opencode-anthropic-fast",
+    "opencode-openai-fast"
+  ],
+  "synthesizer": "opencode-anthropic-fast",
+  "flags": {
+    "raw": false,
+    "instructions": null,
+    "verbose": true,
+    "max_rounds": 2,
+    "parse_agent": null
+  },
+  "phases": {
+    "seed_generation": {
+      "status": "complete",
+      "started_at": "2026-03-02T02:39:01.732497+00:00",
+      "completed_at": "2026-03-02T02:40:50.742977+00:00",
+      "duration_seconds": 109.00969583398546,
+      "agents": {
+        "opencode-anthropic-fast": {
+          "status": "complete",
+          "duration_seconds": 109.00969583398546,
+          "output": "phase1/opencode-anthropic-fast-seed.md"
+        },
+        "opencode-openai-fast": {
+          "status": "complete",
+          "duration_seconds": 109.00969583398546,
+          "output": "phase1/opencode-openai-fast-seed.md"
+        }
+      }
+    },
+    "adversarial_optimization": {
+      "status": "complete",
+      "started_at": "2026-03-02T02:40:50.743416+00:00",
+      "completed_at": "2026-03-02T02:43:15.064739+00:00",
+      "duration_seconds": 144.3203877909982,
+      "seeds": {
+        "opencode-anthropic-fast": {
+          "status": "complete",
+          "judge": "opencode-openai-fast",
+          "rounds_completed": 3,
+          "seed_score": 6.8,
+          "final_score": 6.8,
+          "output": "phase2/opencode-anthropic-fast-optimized.md",
+          "log": "phase2/opencode-anthropic-fast-optimization-log.json",
+          "dimension_history": [
+            {
+              "round": 1,
+              "score": 6.8,
+              "dimensions": {
+                "factual_accuracy": 7,
+                "depth_of_analysis": 8,
+                "source_quality": 6,
+                "coverage_breadth": 7,
+                "analytical_rigor": 6
+              }
+            },
+            {
+              "round": 2,
+              "score": 7.2,
+              "dimensions": {
+                "factual_accuracy": 7,
+                "depth_of_analysis": 8,
+                "source_quality": 6,
+                "coverage_breadth": 8,
+                "analytical_rigor": 7
+              }
+            },
+            {
+              "round": 3,
+              "score": 2.6,
+              "dimensions": {
+                "factual_accuracy": 4,
+                "depth_of_analysis": 3,
+                "source_quality": 1,
+                "coverage_breadth": 2,
+                "analytical_rigor": 3
+              }
+            }
+          ]
+        },
+        "opencode-openai-fast": {
+          "status": "complete",
+          "judge": "opencode-anthropic-fast",
+          "rounds_completed": 3,
+          "seed_score": 8.3,
+          "final_score": 8.3,
+          "output": "phase2/opencode-openai-fast-optimized.md",
+          "log": "phase2/opencode-openai-fast-optimization-log.json",
+          "dimension_history": [
+            {
+              "round": 1,
+              "score": 8.3,
+              "dimensions": {
+                "factual_accuracy": 9,
+                "depth_of_analysis": 8,
+                "source_quality": 9,
+                "coverage_breadth": 8,
+                "analytical_rigor": 8
+              }
+            },
+            {
+              "round": 2,
+              "score": 7.4,
+              "dimensions": {
+                "factual_accuracy": 8,
+                "depth_of_analysis": 7,
+                "source_quality": 8,
+                "coverage_breadth": 7,
+                "analytical_rigor": 7
+              }
+            },
+            {
+              "round": 3,
+              "score": 7.4,
+              "dimensions": {
+                "factual_accuracy": 8,
+                "depth_of_analysis": 6,
+                "source_quality": 8,
+                "coverage_breadth": 7,
+                "analytical_rigor": 7
+              }
+            }
+          ]
+        }
+      }
+    },
+    "synthesis": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "duration_seconds": null,
+      "agent": "opencode-anthropic-fast",
+      "output": "phase3/final-report.md"
+    }
+  },
+  "total_duration_seconds": null
+}
