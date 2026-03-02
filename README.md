@@ -168,20 +168,80 @@ ivory profiles           # list all profiles
 
 ### Sandboxing
 
-Agent isolation for template-based strategies (debate, map-reduce, red-blue). Four backends:
+Agent isolation for template-based strategies (debate, map-reduce, red-blue). Each agent runs in its own sandbox; shared state flows through orchestrator-mediated blackboards -- agents never write to shared volumes directly.
 
-| Backend | Requires | Description |
-|---------|----------|-------------|
-| `none` | nothing | No isolation (default) |
-| `local` | nothing | Directory-based isolation per agent |
-| `agentfs` | [agentfs](https://agentfs.ai) CLI | SQLite copy-on-write filesystem with encryption and audit trail |
-| `daytona` | [daytona](https://daytona.io) SDK | Full Docker container isolation with resource limits |
+> Council and adversarial use direct filesystem paths and currently ignore `--sandbox`.
+
+#### Backends
+
+| Backend | Requires | Isolation | Snapshots | Audit |
+|---------|----------|-----------|-----------|-------|
+| `none` | nothing | None -- all agents share the run directory (default) | -- | -- |
+| `local` | nothing | Directory-based -- each agent gets `sandboxes/{agent}/workspace/` | -- | -- |
+| `agentfs` | [agentfs](https://agentfs.ai) CLI | OS-level (FUSE/namespaces on Linux, NFS/sandbox-exec on macOS) with SQLite CoW filesystem | Yes | Yes |
+| `daytona` | [daytona](https://daytona.io) SDK | Full Docker container with configurable CPU, memory, disk, and network policy | -- | -- |
+
+#### High-level interfaces
+
+Three `@runtime_checkable` protocols in `sandbox/types.py`:
+
+- **`SandboxProvider`** -- Factory. Creates per-agent sandboxes and shared volumes. Implementations registered in `sandbox/__init__.py` as `{"none", "local", "agentfs", "daytona"}`.
+- **`Sandbox`** -- An isolated workspace for one agent. Provides `execute()`, `read_file()`, `write_file()`, `copy_in()`, `copy_out()`, `snapshot()`, `diff()`, `destroy()`.
+- **`SharedVolume`** -- A shared filesystem region mountable into multiple sandboxes. Provides `write_file()`, `read_file()`, `append_file()`, `list_files()`.
+
+The `GenericTemplateExecutor` creates one sandbox per agent and one shared volume per blackboard, then runs phases in sequence. After each phase, `setup_phase_isolation()` copies data between sandboxes based on the phase's isolation mode:
+
+| Isolation mode | Behavior |
+|----------------|----------|
+| `full` | No data exchange -- sandboxes are fully isolated |
+| `read-peers` | Each agent receives peer outputs from a prior phase (excluding its own) |
+| `read-all` | Every agent receives all outputs from specified input phases |
+| `blackboard` | Current blackboard snapshot copied into each sandbox (read + append) |
+| `read-blackboard` | Same as blackboard, but read-only intent |
+| `team` | Team-internal shared volume files copied into each agent's sandbox |
+| `cross-team-read` | Opposing team outputs copied into each agent's sandbox |
+
+#### Blackboard pattern
+
+Orchestrator-mediated shared state via `FileBlackboard` (`sandbox/blackboard.py`). Two modes:
+
+- **Transcript mode** (`file:` set) -- single file, append-only. Each turn appends `## {agent} -- Round N`.
+- **Directory mode** (`dir:` set) -- one file per contribution: `{round}-{agent}.md`.
+
+Flow per round: orchestrator reads blackboard, writes snapshot into each sandbox, agents run, orchestrator reads outputs back, appends to blackboard. Agents see a consistent snapshot but never write directly.
+
+#### Usage with strategies
 
 ```bash
-ivory research "topic" --template debate -a a,b,c -s a --sandbox local
+# debate -- turn-based argumentation with shared blackboard transcript
+ivory research "topic" --template debate \
+  -a claude-opus,codex-5.3-xhigh,gemini-deep -s claude-opus \
+  --sandbox local --rounds 5
+
+# map-reduce -- decompose, research subtopics in parallel, merge
+ivory research "topic" --template map-reduce \
+  -a claude-opus,codex-5.3-xhigh,gemini-deep,amp-deep -s claude-opus \
+  --sandbox agentfs
+
+# red-blue -- adversarial team debate with cross-team isolation
+ivory research "topic" --template red-blue \
+  -a claude-opus,codex-5.3-xhigh,gemini-deep,amp-deep -s claude-opus \
+  --red-team claude-opus,codex-5.3-xhigh --blue-team gemini-deep,amp-deep \
+  --sandbox daytona
+
+# query the sandbox audit trail (agentfs only)
+ivory audit research/20260301-143000-a1b2c3/ claude-opus
 ```
 
-> Sandbox support is wired into the template executor used by debate, map-reduce, and red-blue. Council and adversarial use direct filesystem paths and currently ignore `--sandbox`.
+YAML templates can declare sandbox defaults that `--sandbox` overrides:
+
+```yaml
+defaults:
+  sandbox:
+    backend: local
+    snapshot_after_phase: true
+    snapshot_on_failure: true
+```
 
 ### Output
 
