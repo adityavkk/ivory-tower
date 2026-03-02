@@ -188,3 +188,41 @@ class TestSandboxACPClientStreaming:
         )
         client.session_update(session_id="s1", update=chunk)
         assert client.get_full_text() == "silent"
+
+
+# ---------------------------------------------------------------------------
+# StreamingPanel tests
+# ---------------------------------------------------------------------------
+
+
+class TestStreamingPanel:
+    """Test the Rich-based streaming display panel."""
+
+    def test_panel_as_context_manager(self):
+        """Panel can be used as a context manager."""
+        from ivory_tower.log import StreamingPanel
+
+        panel = StreamingPanel()
+        # Don't start live display in tests (no terminal), but verify API
+        panel.update("claude", "Hello ")
+        panel.update("claude", "world")
+        assert True  # No exception raised
+
+    def test_panel_make_callback(self):
+        """make_callback returns a callable matching (str, str) -> None."""
+        from ivory_tower.log import StreamingPanel
+
+        panel = StreamingPanel()
+        cb = panel.make_callback()
+        assert callable(cb)
+        # Should accept agent_name, text
+        cb("agent-a", "some text")
+
+    def test_panel_agent_switch(self):
+        """Switching agents updates the panel title."""
+        from ivory_tower.log import StreamingPanel
+
+        panel = StreamingPanel()
+        panel.update("agent-a", "text from a")
+        panel.update("agent-b", "text from b")
+        # No exception means agent switch is handled

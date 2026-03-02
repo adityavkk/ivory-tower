@@ -392,3 +392,74 @@ def log_pipeline_complete(template_name: str, duration: float) -> None:
         fmt_ok("%s template complete [duration](%s)[/duration]"),
         template_name, fmt_duration(duration),
     )
+
+
+# ---- Streaming panel -------------------------------------------------------
+
+
+class StreamingPanel:
+    """Live streaming display for agent output.
+
+    When --stream is enabled, this replaces the spinner and shows
+    agent output as it arrives. Uses Rich's Live display for smooth
+    terminal updates.
+
+    Usage::
+
+        panel = StreamingPanel()
+        panel.start()
+        panel.update("claude", "Some text from the agent...")
+        panel.update("claude", " more text")
+        panel.stop()
+
+    Or as a context manager::
+
+        with StreamingPanel() as panel:
+            panel.update("claude", "text")
+    """
+
+    def __init__(self) -> None:
+        from rich.live import Live
+        from rich.panel import Panel
+        from rich.text import Text
+
+        self._text = Text()
+        self._panel = Panel(self._text, title="", border_style="dim")
+        self._live = Live(self._panel, console=console, refresh_per_second=8)
+        self._agent: str = ""
+        self._Panel = Panel
+        self._started = False
+
+    def start(self) -> None:
+        """Begin live display."""
+        self._live.start()
+        self._started = True
+
+    def stop(self) -> None:
+        """End live display."""
+        if self._started:
+            self._live.stop()
+            self._started = False
+
+    def update(self, agent_name: str, text: str) -> None:
+        """Append streaming text from an agent."""
+        if agent_name != self._agent:
+            if self._agent:
+                self._text.append("\n")
+            self._agent = agent_name
+            self._panel.title = f"[agent]{agent_name}[/agent]"
+
+        self._text.append(text)
+        if self._started:
+            self._live.update(self._panel)
+
+    def make_callback(self) -> "Callable[[str, str], None]":
+        """Return a callback suitable for on_chunk parameter."""
+        return self.update
+
+    def __enter__(self) -> StreamingPanel:
+        self.start()
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.stop()

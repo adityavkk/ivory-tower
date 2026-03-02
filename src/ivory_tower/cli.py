@@ -65,6 +65,9 @@ def research(
     verbose: Annotated[
         bool, typer.Option("--verbose", "-v", help="Stream logs")
     ] = False,
+    stream: Annotated[
+        bool, typer.Option("--stream", help="Show live agent output as it streams")
+    ] = False,
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Show plan only")
     ] = False,
@@ -227,6 +230,7 @@ def research(
         rounds=rounds,
         red_team=parsed_red_team,
         blue_team=parsed_blue_team,
+        stream=stream,
     )
 
     if dry_run:

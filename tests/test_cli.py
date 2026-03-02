@@ -164,6 +164,28 @@ class TestResearchSuccess:
         mock_dry_run.assert_called_once()
         mock_pipeline.assert_not_called()
 
+    @patch("ivory_tower.cli.run_pipeline")
+    @patch("ivory_tower.cli.validate_agent_configs", return_value=[])
+    def test_research_stream_flag(
+        self, mock_validate, mock_pipeline, tmp_path
+    ):
+        """--stream sets config.stream=True."""
+        run_dir = tmp_path / "research" / "run-123"
+        run_dir.mkdir(parents=True)
+        (run_dir / "phase3" / "final-report.md").parent.mkdir(parents=True)
+        (run_dir / "phase3" / "final-report.md").write_text("report")
+        mock_pipeline.return_value = run_dir
+
+        result = runner.invoke(app, [
+            "research", "some topic",
+            "--agents", "claude-opus",
+            "--synthesizer", "claude-opus",
+            "--stream",
+        ])
+        assert result.exit_code == 0
+        config = mock_pipeline.call_args[0][0]
+        assert config.stream is True
+
 
 # ---------------------------------------------------------------------------
 # 4. Resume command
