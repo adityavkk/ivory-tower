@@ -7,13 +7,27 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
+from ivory_tower.executor.types import AgentOutput
 from ivory_tower.strategies.adversarial import (
     _extract_json_from_markdown,
     _llm_extract_json,
     parse_judge_output,
     extract_feedback_from_reflective_dataset,
-    read_counselors_output,
 )
+
+
+# ---------------------------------------------------------------------------
+# Helpers for mocking the executor-based _llm_extract_json
+# ---------------------------------------------------------------------------
+
+def _fake_get_executor(agent_name):
+    return MagicMock(name=f"executor-{agent_name}")
+
+
+def _fake_create_sandbox(run_dir, agent_name, run_id, backend="none"):
+    mock = MagicMock(name=f"sandbox-{agent_name}")
+    mock.workspace_dir = run_dir
+    return mock
 
 
 class TestExtractJsonFromMarkdown:
@@ -129,45 +143,13 @@ class TestExtractFeedbackFromReflectiveDataset:
         assert result["score"] == 0.0 or result2["score"] == 0.0
 
 
-class TestReadCounselorsOutput:
-    def test_reads_from_slug_subdir(self, tmp_path):
-        slug = tmp_path / "slug-001"
-        slug.mkdir()
-        (slug / "agent-a.md").write_text("Report A")
-
-        result = read_counselors_output(tmp_path, "agent-a")
-        assert result == "Report A"
-
-    def test_falls_back_to_any_md(self, tmp_path):
-        slug = tmp_path / "slug-001"
-        slug.mkdir()
-        (slug / "other.md").write_text("Some report")
-
-        result = read_counselors_output(tmp_path, "agent-a")
-        assert result == "Some report"
-
-    def test_reads_direct_agent_file(self, tmp_path):
-        (tmp_path / "agent-a.md").write_text("Direct report")
-
-        result = read_counselors_output(tmp_path, "agent-a")
-        assert result == "Direct report"
-
-    def test_raises_when_empty(self, tmp_path):
-        with pytest.raises(FileNotFoundError):
-            read_counselors_output(tmp_path, "agent-a")
-
-
 class TestLlmExtractJson:
     """Tests for _llm_extract_json (parse-agent fallback)."""
 
-    def _mock_counselors_with_json(self, output_dir, agent, json_data):
-        """Helper: simulate counselors writing a JSON response."""
-        slug_dir = output_dir / "parse-slug"
-        slug_dir.mkdir(parents=True, exist_ok=True)
-        (slug_dir / f"{agent}.md").write_text(json.dumps(json_data))
-
-    @patch("ivory_tower.strategies.adversarial.run_counselors")
-    def test_extracts_valid_json(self, mock_run, tmp_path):
+    @patch("ivory_tower.strategies.adversarial._create_sandbox", side_effect=_fake_create_sandbox)
+    @patch("ivory_tower.strategies.adversarial._get_executor", side_effect=_fake_get_executor)
+    @patch("ivory_tower.strategies.adversarial._run_agent")
+    def test_extracts_valid_json(self, mock_run, mock_exec, mock_sandbox, tmp_path):
         """Parse agent returns clean JSON -- should succeed."""
         expected = {
             "overall_score": 7.5,
@@ -180,10 +162,12 @@ class TestLlmExtractJson:
             "critique": "Solid report.",
         }
 
-        def side_effect(prompt_file, agents, output_dir, verbose=False):
-            self._mock_counselors_with_json(output_dir, agents[0], expected)
-
-        mock_run.side_effect = side_effect
+        mock_run.return_value = AgentOutput(
+            report_path="parse-agent-fallback/fast-agent-report.md",
+            raw_output=json.dumps(expected),
+            duration_seconds=1.0,
+            metadata={"protocol": "mock"},
+        )
 
         result = _llm_extract_json("raw judge prose here", "fast-agent", tmp_path)
         assert result is not None
@@ -191,59 +175,67 @@ class TestLlmExtractJson:
         assert parsed["overall_score"] == 7.5
         assert parsed["dimensions"]["factual_accuracy"] == 8
 
-    @patch("ivory_tower.strategies.adversarial.run_counselors")
-    def test_returns_none_when_agent_returns_no_json(self, mock_run, tmp_path):
+    @patch("ivory_tower.strategies.adversarial._create_sandbox", side_effect=_fake_create_sandbox)
+    @patch("ivory_tower.strategies.adversarial._get_executor", side_effect=_fake_get_executor)
+    @patch("ivory_tower.strategies.adversarial._run_agent")
+    def test_returns_none_when_agent_returns_no_json(self, mock_run, mock_exec, mock_sandbox, tmp_path):
         """Parse agent returns prose without JSON -- should return None."""
-        def side_effect(prompt_file, agents, output_dir, verbose=False):
-            slug_dir = output_dir / "parse-slug"
-            slug_dir.mkdir(parents=True, exist_ok=True)
-            (slug_dir / f"{agents[0]}.md").write_text("I can't parse that output.")
-
-        mock_run.side_effect = side_effect
-
-        result = _llm_extract_json("raw text", "fast-agent", tmp_path)
-        assert result is None
-
-    @patch("ivory_tower.strategies.adversarial.run_counselors")
-    def test_returns_none_when_counselors_fails(self, mock_run, tmp_path):
-        """counselors run raises -- should return None gracefully."""
-        mock_run.side_effect = RuntimeError("counselors crashed")
+        mock_run.return_value = AgentOutput(
+            report_path="parse-agent-fallback/fast-agent-report.md",
+            raw_output="I can't parse that output.",
+            duration_seconds=1.0,
+            metadata={"protocol": "mock"},
+        )
 
         result = _llm_extract_json("raw text", "fast-agent", tmp_path)
         assert result is None
 
-    @patch("ivory_tower.strategies.adversarial.run_counselors")
-    def test_returns_none_when_json_missing_overall_score(self, mock_run, tmp_path):
+    @patch("ivory_tower.strategies.adversarial._create_sandbox", side_effect=_fake_create_sandbox)
+    @patch("ivory_tower.strategies.adversarial._get_executor", side_effect=_fake_get_executor)
+    @patch("ivory_tower.strategies.adversarial._run_agent")
+    def test_returns_none_when_run_agent_fails(self, mock_run, mock_exec, mock_sandbox, tmp_path):
+        """_run_agent raises -- should return None gracefully."""
+        mock_run.side_effect = RuntimeError("executor crashed")
+
+        result = _llm_extract_json("raw text", "fast-agent", tmp_path)
+        assert result is None
+
+    @patch("ivory_tower.strategies.adversarial._create_sandbox", side_effect=_fake_create_sandbox)
+    @patch("ivory_tower.strategies.adversarial._get_executor", side_effect=_fake_get_executor)
+    @patch("ivory_tower.strategies.adversarial._run_agent")
+    def test_returns_none_when_json_missing_overall_score(self, mock_run, mock_exec, mock_sandbox, tmp_path):
         """Parse agent returns valid JSON but without overall_score."""
-        def side_effect(prompt_file, agents, output_dir, verbose=False):
-            slug_dir = output_dir / "parse-slug"
-            slug_dir.mkdir(parents=True, exist_ok=True)
-            (slug_dir / f"{agents[0]}.md").write_text(
-                json.dumps({"dimensions": {}, "strengths": []})
-            )
-
-        mock_run.side_effect = side_effect
+        mock_run.return_value = AgentOutput(
+            report_path="parse-agent-fallback/fast-agent-report.md",
+            raw_output=json.dumps({"dimensions": {}, "strengths": []}),
+            duration_seconds=1.0,
+            metadata={"protocol": "mock"},
+        )
 
         result = _llm_extract_json("raw text", "fast-agent", tmp_path)
         assert result is None
 
-    @patch("ivory_tower.strategies.adversarial.run_counselors")
-    def test_writes_prompt_file(self, mock_run, tmp_path):
+    @patch("ivory_tower.strategies.adversarial._create_sandbox", side_effect=_fake_create_sandbox)
+    @patch("ivory_tower.strategies.adversarial._get_executor", side_effect=_fake_get_executor)
+    @patch("ivory_tower.strategies.adversarial._run_agent")
+    def test_writes_prompt_file(self, mock_run, mock_exec, mock_sandbox, tmp_path):
         """Verify the parse prompt is written to disk."""
-        def side_effect(prompt_file, agents, output_dir, verbose=False):
-            slug_dir = output_dir / "parse-slug"
-            slug_dir.mkdir(parents=True, exist_ok=True)
-            (slug_dir / f"{agents[0]}.md").write_text("{}")
-
-        mock_run.side_effect = side_effect
+        mock_run.return_value = AgentOutput(
+            report_path="parse-agent-fallback/fast-agent-report.md",
+            raw_output="{}",
+            duration_seconds=1.0,
+            metadata={"protocol": "mock"},
+        )
 
         _llm_extract_json("the raw judge text", "fast-agent", tmp_path)
         prompt_file = tmp_path / "parse-agent-fallback" / "parse-prompt.md"
         assert prompt_file.exists()
         assert "the raw judge text" in prompt_file.read_text()
 
-    @patch("ivory_tower.strategies.adversarial.run_counselors")
-    def test_extracts_json_in_fenced_block(self, mock_run, tmp_path):
+    @patch("ivory_tower.strategies.adversarial._create_sandbox", side_effect=_fake_create_sandbox)
+    @patch("ivory_tower.strategies.adversarial._get_executor", side_effect=_fake_get_executor)
+    @patch("ivory_tower.strategies.adversarial._run_agent")
+    def test_extracts_json_in_fenced_block(self, mock_run, mock_exec, mock_sandbox, tmp_path):
         """Parse agent returns JSON inside a fenced code block."""
         expected = {
             "overall_score": 6.0,
@@ -254,14 +246,12 @@ class TestLlmExtractJson:
             "critique": "ok",
         }
 
-        def side_effect(prompt_file, agents, output_dir, verbose=False):
-            slug_dir = output_dir / "parse-slug"
-            slug_dir.mkdir(parents=True, exist_ok=True)
-            (slug_dir / f"{agents[0]}.md").write_text(
-                f"Here is the JSON:\n```json\n{json.dumps(expected)}\n```"
-            )
-
-        mock_run.side_effect = side_effect
+        mock_run.return_value = AgentOutput(
+            report_path="parse-agent-fallback/fast-agent-report.md",
+            raw_output=f"Here is the JSON:\n```json\n{json.dumps(expected)}\n```",
+            duration_seconds=1.0,
+            metadata={"protocol": "mock"},
+        )
 
         result = _llm_extract_json("raw text", "fast-agent", tmp_path)
         assert result is not None

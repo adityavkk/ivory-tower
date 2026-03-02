@@ -5,7 +5,7 @@ CLI status/list/strategies commands with adversarial manifests, --dry-run --stra
 adversarial, and backward compatibility with v1 manifests (no strategy field).
 
 Council tests mock at the executor layer (_run_agent, _get_executor, _create_sandbox).
-Adversarial tests mock at the counselors layer (run_counselors).
+Adversarial tests mock at the same executor layer on the adversarial module.
 """
 
 from __future__ import annotations
@@ -83,27 +83,12 @@ def _fake_create_sandbox(run_dir, agent_name, run_id, backend="none"):
     return mock
 
 
-# -- Adversarial-specific helpers (still use counselors mocks) --
-
-def _fake_counselors(prompt_file, agents, output_dir, verbose=False):
-    """Generic mock counselors that writes agent output to slug dir."""
-    slug = output_dir / "slug-001"
-    slug.mkdir(parents=True, exist_ok=True)
-    for agent in agents:
-        prompt_text = prompt_file.read_text() if prompt_file.exists() else ""
-        if "judg" in prompt_text.lower() or "evaluat" in prompt_text.lower():
-            judge_data = {
-                "overall_score": 7.0,
-                "dimensions": {"factual_accuracy": 7},
-                "strengths": ["good"],
-                "weaknesses": ["could improve"],
-                "suggestions": ["add sources"],
-                "critique": "solid",
-            }
-            (slug / f"{agent}.md").write_text(json.dumps(judge_data))
-        else:
-            (slug / f"{agent}.md").write_text(f"Report by {agent}")
-    return MagicMock(returncode=0)
+# Adversarial mock decorators (same pattern as council)
+_adversarial_mocks = [
+    patch("ivory_tower.strategies.adversarial._create_sandbox", side_effect=_fake_create_sandbox),
+    patch("ivory_tower.strategies.adversarial._get_executor", side_effect=_fake_get_executor),
+    patch("ivory_tower.strategies.adversarial._run_agent", side_effect=_fake_run_agent),
+]
 
 
 def _fake_gepa_modules():
@@ -249,8 +234,10 @@ class TestCouncilPipelineE2E:
 class TestAdversarialPipelineE2E:
     """Full adversarial pipeline through run_pipeline()."""
 
-    @patch("ivory_tower.strategies.adversarial.run_counselors", side_effect=_fake_counselors)
-    def test_full_adversarial_pipeline(self, mock_counselors, tmp_path):
+    @patch("ivory_tower.strategies.adversarial._create_sandbox", side_effect=_fake_create_sandbox)
+    @patch("ivory_tower.strategies.adversarial._get_executor", side_effect=_fake_get_executor)
+    @patch("ivory_tower.strategies.adversarial._run_agent", side_effect=_fake_run_agent)
+    def test_full_adversarial_pipeline(self, mock_run, mock_exec, mock_sandbox, tmp_path):
         config = RunConfig(
             topic="Integration test: adversarial AI safety",
             agents=["agent-a", "agent-b"],
@@ -278,8 +265,10 @@ class TestAdversarialPipelineE2E:
         assert manifest.phases["synthesis"].status == PhaseStatus.COMPLETE
         assert manifest.total_duration_seconds is not None
 
-    @patch("ivory_tower.strategies.adversarial.run_counselors", side_effect=_fake_counselors)
-    def test_adversarial_pipeline_creates_output_files(self, mock_counselors, tmp_path):
+    @patch("ivory_tower.strategies.adversarial._create_sandbox", side_effect=_fake_create_sandbox)
+    @patch("ivory_tower.strategies.adversarial._get_executor", side_effect=_fake_get_executor)
+    @patch("ivory_tower.strategies.adversarial._run_agent", side_effect=_fake_run_agent)
+    def test_adversarial_pipeline_creates_output_files(self, mock_run, mock_exec, mock_sandbox, tmp_path):
         config = RunConfig(
             topic="File check test",
             agents=["agent-a", "agent-b"],
@@ -311,8 +300,10 @@ class TestAdversarialPipelineE2E:
         # Final report
         assert (run_dir / "phase3").exists()
 
-    @patch("ivory_tower.strategies.adversarial.run_counselors", side_effect=_fake_counselors)
-    def test_adversarial_pipeline_manifest_serialization_roundtrip(self, mock_counselors, tmp_path):
+    @patch("ivory_tower.strategies.adversarial._create_sandbox", side_effect=_fake_create_sandbox)
+    @patch("ivory_tower.strategies.adversarial._get_executor", side_effect=_fake_get_executor)
+    @patch("ivory_tower.strategies.adversarial._run_agent", side_effect=_fake_run_agent)
+    def test_adversarial_pipeline_manifest_serialization_roundtrip(self, mock_run, mock_exec, mock_sandbox, tmp_path):
         """Manifest saved by adversarial pipeline can be loaded and re-serialized."""
         config = RunConfig(
             topic="Roundtrip test",
@@ -349,8 +340,10 @@ class TestAdversarialPipelineE2E:
 class TestResumeAdversarial:
     """Resume a partially-completed adversarial run."""
 
-    @patch("ivory_tower.strategies.adversarial.run_counselors", side_effect=_fake_counselors)
-    def test_resume_partial_adversarial(self, mock_counselors, tmp_path):
+    @patch("ivory_tower.strategies.adversarial._create_sandbox", side_effect=_fake_create_sandbox)
+    @patch("ivory_tower.strategies.adversarial._get_executor", side_effect=_fake_get_executor)
+    @patch("ivory_tower.strategies.adversarial._run_agent", side_effect=_fake_run_agent)
+    def test_resume_partial_adversarial(self, mock_run, mock_exec, mock_sandbox, tmp_path):
         """Resume where seed gen is done but optimization + synthesis are pending."""
         run_dir = tmp_path / "run-adv-resume"
         for d in ("phase1", "phase2", "phase3"):
@@ -389,8 +382,10 @@ class TestResumeAdversarial:
         )
         assert loaded.phases["synthesis"].status == PhaseStatus.COMPLETE
 
-    @patch("ivory_tower.strategies.adversarial.run_counselors", side_effect=_fake_counselors)
-    def test_resume_fully_complete_adversarial_is_noop(self, mock_counselors, tmp_path):
+    @patch("ivory_tower.strategies.adversarial._create_sandbox", side_effect=_fake_create_sandbox)
+    @patch("ivory_tower.strategies.adversarial._get_executor", side_effect=_fake_get_executor)
+    @patch("ivory_tower.strategies.adversarial._run_agent", side_effect=_fake_run_agent)
+    def test_resume_fully_complete_adversarial_is_noop(self, mock_run, mock_exec, mock_sandbox, tmp_path):
         """Resuming a fully complete run doesn't re-run anything."""
         run_dir = tmp_path / "run-adv-complete"
         run_dir.mkdir(parents=True)
@@ -412,8 +407,8 @@ class TestResumeAdversarial:
         (run_dir / "topic.md").write_text("Complete test")
 
         resume_pipeline(run_dir)
-        # No counselors calls should have been made
-        assert mock_counselors.call_count == 0
+        # No agent calls should have been made
+        assert mock_run.call_count == 0
 
 
 # ---------------------------------------------------------------------------
@@ -760,8 +755,10 @@ class TestConfigValidation:
 class TestCLIResumeAdversarial:
     """ivory resume on adversarial manifests."""
 
-    @patch("ivory_tower.strategies.adversarial.run_counselors", side_effect=_fake_counselors)
-    def test_cli_resume_adversarial(self, mock_counselors, tmp_path):
+    @patch("ivory_tower.strategies.adversarial._create_sandbox", side_effect=_fake_create_sandbox)
+    @patch("ivory_tower.strategies.adversarial._get_executor", side_effect=_fake_get_executor)
+    @patch("ivory_tower.strategies.adversarial._run_agent", side_effect=_fake_run_agent)
+    def test_cli_resume_adversarial(self, mock_run, mock_exec, mock_sandbox, tmp_path):
         run_dir = tmp_path / "run-cli-resume"
         for d in ("phase1", "phase2", "phase3"):
             (run_dir / d).mkdir(parents=True, exist_ok=True)
