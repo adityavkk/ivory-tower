@@ -3,7 +3,7 @@ title: "ivory-tower: strategy abstraction + adversarial optimization"
 author: "human:aditya"
 version: 1
 created: 2026-03-01
-depends_on: "SPEC.md v1"
+depends_on: "01-SPEC.md v1"
 ---
 
 # Ivory Tower v2 -- Strategy Abstraction + Adversarial Optimization
@@ -59,7 +59,7 @@ git branch -d strategy-abstraction
 
 - [gepa-ai/gepa](https://github.com/gepa-ai/gepa) -- `optimize_anything` API, evaluator contract (score + ASI), Pareto-efficient search, `GEPAConfig`/`EngineConfig`.
 - [hamelsmu/research-council](https://github.com/hamelsmu/research-council) -- skeptical cross-pollination, file-mediated agent communication, graceful degradation.
-- [SPEC.md](./SPEC.md) -- the v1 spec this builds on.
+- [01-SPEC.md](./01-SPEC.md) -- the v1 spec this builds on.
 - [Strategy pattern](https://refactoring.guru/design-patterns/strategy) -- encapsulate a family of algorithms, make them interchangeable.
 
 ## FOR

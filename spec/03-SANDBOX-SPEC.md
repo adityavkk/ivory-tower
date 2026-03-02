@@ -3,7 +3,7 @@ title: "ivory-tower: pluggable multi-agent sandboxing"
 author: "human:aditya"
 version: 1
 created: 2026-03-01
-depends_on: "STRATEGY-SPEC.md v1"
+depends_on: "02-STRATEGY-SPEC.md v1"
 ---
 
 # Ivory Tower v3 -- Pluggable Multi-Agent Sandboxing
@@ -196,7 +196,7 @@ The implementing agent (whether human or AI) SHOULD use **subagents for parallel
 - [tursodatabase/agentfs](https://github.com/tursodatabase/agentfs) -- SQLite-backed virtual filesystem for agents. OS-level sandboxing via FUSE + namespaces (Linux) and NFS + sandbox-exec (macOS). Copy-on-write overlay. KV store. Tool call audit trail. Single-file portability.
 - [Daytona](https://www.daytona.io/) -- Docker container sandboxes for AI agents. SDK (Python, TypeScript). FUSE volumes for shared state. Per-sandbox network firewall. Sub-90ms warm boot.
 - [anthropic-ai/sandbox-runtime](https://github.com/anthropic-experimental/sandbox-runtime) -- Claude Code's open-source OS-level sandbox (Seatbelt/bubblewrap). Domain-allowlisting proxy for network isolation. Apache-2.0.
-- [STRATEGY-SPEC.md](./STRATEGY-SPEC.md) -- The v2 spec this builds on. Strategy protocol, registry, adversarial optimization.
+- [02-STRATEGY-SPEC.md](./02-STRATEGY-SPEC.md) -- The v2 spec this builds on. Strategy protocol, registry, adversarial optimization.
 - [Strategy pattern](https://refactoring.guru/design-patterns/strategy) -- Encapsulate a family of algorithms, make them interchangeable.
 - [12-factor app config](https://12factor.net/config) -- Defaults in code, overrides via files, final overrides via CLI flags.
 - [Kubernetes pod security](https://kubernetes.io/docs/concepts/security/pod-security-standards/) -- Declarative security profiles (privileged, baseline, restricted) as precedent for isolation modes.
