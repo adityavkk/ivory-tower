@@ -87,6 +87,7 @@ class SandboxACPClient(Client):
         self.accumulated_text: list[str] = []
         self.written_files: list[str] = []
         self._terminals: dict[str, Any] = {}
+        self._last_tool_context: dict[str, Any] | None = None
 
     # ------------------------------------------------------------------
     # Public helpers
@@ -96,6 +97,12 @@ class SandboxACPClient(Client):
         """Return all accumulated text joined as a single string."""
         return "".join(self.accumulated_text)
 
+    def get_last_tool_context(self) -> dict[str, Any] | None:
+        """Return the last observed ACP tool/request context."""
+        if self._last_tool_context is None:
+            return None
+        return dict(self._last_tool_context)
+
     def reset_text(self) -> None:
         """Clear accumulated text (for session reuse across phases)."""
         self.accumulated_text.clear()
@@ -104,7 +111,7 @@ class SandboxACPClient(Client):
     # ACP Client interface
     # ------------------------------------------------------------------
 
-    def session_update(
+    async def session_update(
         self,
         session_id: str,
         update: Any,
@@ -117,8 +124,14 @@ class SandboxACPClient(Client):
                 self.accumulated_text.append(text)
                 if self.on_chunk is not None:
                     self.on_chunk(self.sandbox.agent_name, text)
+        elif isinstance(update, ToolCallUpdate):
+            self._record_tool_context(
+                tool_name="tool_call_update",
+                session_id=session_id,
+                title=update.title,
+            )
 
-    def read_text_file(
+    async def read_text_file(
         self,
         path: str,
         session_id: str,
@@ -127,12 +140,35 @@ class SandboxACPClient(Client):
         **kwargs: Any,
     ) -> ReadTextFileResponse:
         """Read a text file, routed through the sandbox."""
-        resolved = self._resolve_sandbox_path(path)
-        self._check_read_allowed(resolved)
-        content = self.sandbox.read_file(resolved)
-        return ReadTextFileResponse(content=content)
+        self._record_tool_context(
+            tool_name="readTextFile",
+            session_id=session_id,
+            path=path,
+            limit=limit,
+            line=line,
+        )
+        try:
+            resolved = self._resolve_sandbox_path(path)
+            self._record_tool_context(
+                tool_name="readTextFile",
+                session_id=session_id,
+                path=path,
+                resolved_path=resolved,
+            )
+            self._check_read_allowed(resolved)
+            content = self.sandbox.read_file(resolved)
+            return ReadTextFileResponse(content=content)
+        except Exception:
+            logger.exception(
+                "[%s] readTextFile failed (path=%r, isolation_mode=%s, permissions=%s)",
+                self.sandbox.agent_name,
+                path,
+                self.isolation_mode,
+                self.permissions,
+            )
+            raise
 
-    def write_text_file(
+    async def write_text_file(
         self,
         content: str,
         path: str,
@@ -140,17 +176,40 @@ class SandboxACPClient(Client):
         **kwargs: Any,
     ) -> WriteTextFileResponse | None:
         """Write a text file, routed through the sandbox."""
-        resolved = self._resolve_sandbox_path(path)
-        self._check_write_allowed(resolved)
-        self.sandbox.write_file(resolved, content)
-        self.written_files.append(resolved)
-        logger.info(
-            "[%s] writeTextFile: %s (%d bytes)",
-            self.sandbox.agent_name, resolved, len(content),
+        self._record_tool_context(
+            tool_name="writeTextFile",
+            session_id=session_id,
+            path=path,
+            content_bytes=len(content),
         )
-        return WriteTextFileResponse()
+        try:
+            resolved = self._resolve_sandbox_path(path)
+            self._record_tool_context(
+                tool_name="writeTextFile",
+                session_id=session_id,
+                path=path,
+                resolved_path=resolved,
+                content_bytes=len(content),
+            )
+            self._check_write_allowed(resolved)
+            self.sandbox.write_file(resolved, content)
+            self.written_files.append(resolved)
+            logger.info(
+                "[%s] writeTextFile: %s (%d bytes)",
+                self.sandbox.agent_name, resolved, len(content),
+            )
+            return WriteTextFileResponse()
+        except Exception:
+            logger.exception(
+                "[%s] writeTextFile failed (path=%r, isolation_mode=%s, permissions=%s)",
+                self.sandbox.agent_name,
+                path,
+                self.isolation_mode,
+                self.permissions,
+            )
+            raise
 
-    def create_terminal(
+    async def create_terminal(
         self,
         command: str,
         session_id: str,
@@ -161,6 +220,13 @@ class SandboxACPClient(Client):
         **kwargs: Any,
     ) -> CreateTerminalResponse:
         """Create a terminal, routed through sandbox.execute()."""
+        self._record_tool_context(
+            tool_name="createTerminal",
+            session_id=session_id,
+            command=command,
+            args=args or [],
+            cwd=cwd,
+        )
         cmd_list = [command] + (args or [])
 
         # Convert env from ACP EnvVariable list to dict
@@ -171,12 +237,31 @@ class SandboxACPClient(Client):
                 if hasattr(var, "name") and hasattr(var, "value"):
                     env_dict[var.name] = var.value
 
-        result = self.sandbox.execute(cmd_list, env=env_dict, cwd=cwd)
-        terminal_id = str(uuid.uuid4())
-        self._terminals[terminal_id] = result
-        return CreateTerminalResponse(terminal_id=terminal_id)
+        try:
+            result = self.sandbox.execute(cmd_list, env=env_dict, cwd=cwd)
+            terminal_id = str(uuid.uuid4())
+            self._terminals[terminal_id] = result
+            self._record_tool_context(
+                tool_name="createTerminal",
+                session_id=session_id,
+                command=command,
+                args=args or [],
+                cwd=cwd,
+                terminal_id=terminal_id,
+                exit_code=result.exit_code,
+            )
+            return CreateTerminalResponse(terminal_id=terminal_id)
+        except Exception:
+            logger.exception(
+                "[%s] createTerminal failed (command=%r, args=%s, cwd=%r)",
+                self.sandbox.agent_name,
+                command,
+                args or [],
+                cwd,
+            )
+            raise
 
-    def request_permission(
+    async def request_permission(
         self,
         options: list[PermissionOption],
         session_id: str,
@@ -184,6 +269,13 @@ class SandboxACPClient(Client):
         **kwargs: Any,
     ) -> RequestPermissionResponse:
         """Handle permission requests based on the configured policy."""
+        self._record_tool_context(
+            tool_name="requestPermission",
+            session_id=session_id,
+            requested_tool=tool_call.title,
+            permissions_policy=self.permissions,
+            options=[opt.kind for opt in options],
+        )
         match self.permissions:
             case "auto-approve":
                 return self._approve_first_allow(options)
@@ -197,55 +289,82 @@ class SandboxACPClient(Client):
             case _:
                 return self._reject()
 
-    def terminal_output(
+    async def terminal_output(
         self,
         session_id: str,
         terminal_id: str,
         **kwargs: Any,
     ) -> TerminalOutputResponse:
         """Return terminal output."""
+        self._record_tool_context(
+            tool_name="terminalOutput",
+            session_id=session_id,
+            terminal_id=terminal_id,
+        )
         result = self._terminals.get(terminal_id)
         if result is None:
             return TerminalOutputResponse(output="")
         return TerminalOutputResponse(output=result.stdout)
 
-    def wait_for_terminal_exit(
+    async def wait_for_terminal_exit(
         self,
         session_id: str,
         terminal_id: str,
         **kwargs: Any,
     ) -> WaitForTerminalExitResponse:
         """Wait for terminal exit -- our terminals are synchronous."""
+        self._record_tool_context(
+            tool_name="waitForTerminalExit",
+            session_id=session_id,
+            terminal_id=terminal_id,
+        )
         result = self._terminals.get(terminal_id)
         exit_code = result.exit_code if result else -1
         return WaitForTerminalExitResponse(exit_code=exit_code)
 
-    def kill_terminal(
+    async def kill_terminal(
         self,
         session_id: str,
         terminal_id: str,
         **kwargs: Any,
     ) -> KillTerminalCommandResponse | None:
         """Kill a terminal -- no-op since our terminals are synchronous."""
+        self._record_tool_context(
+            tool_name="killTerminal",
+            session_id=session_id,
+            terminal_id=terminal_id,
+        )
         self._terminals.pop(terminal_id, None)
         return KillTerminalCommandResponse()
 
-    def release_terminal(
+    async def release_terminal(
         self,
         session_id: str,
         terminal_id: str,
         **kwargs: Any,
     ) -> ReleaseTerminalResponse | None:
         """Release a terminal."""
+        self._record_tool_context(
+            tool_name="releaseTerminal",
+            session_id=session_id,
+            terminal_id=terminal_id,
+        )
         self._terminals.pop(terminal_id, None)
         return ReleaseTerminalResponse()
 
-    def ext_method(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+    def _record_tool_context(self, tool_name: str, **context: Any) -> None:
+        """Track most recent ACP tool/request context for debugging."""
+        self._last_tool_context = {
+            "tool": tool_name,
+            **context,
+        }
+
+    async def ext_method(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         """Handle unknown extension methods."""
         logger.debug("Unhandled ext_method: %s", method)
         return {}
 
-    def ext_notification(self, method: str, params: dict[str, Any]) -> None:
+    async def ext_notification(self, method: str, params: dict[str, Any]) -> None:
         """Handle unknown extension notifications."""
         logger.debug("Unhandled ext_notification: %s", method)
 

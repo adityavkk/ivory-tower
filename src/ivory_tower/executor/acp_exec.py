@@ -145,10 +145,19 @@ class ACPExecutor:
 
             # Step 5: Send prompt and wait for response
             logger.info("[%s] Sending prompt (%d chars)", agent_name, len(prompt))
-            response = await conn.prompt(
-                prompt=blocks,
-                session_id=current_session_id,
-            )
+            try:
+                response = await conn.prompt(
+                    prompt=blocks,
+                    session_id=current_session_id,
+                )
+            except Exception:
+                logger.exception(
+                    "[%s] ACP prompt failed (session_id=%s, last_tool_context=%s)",
+                    agent_name,
+                    current_session_id,
+                    client.get_last_tool_context(),
+                )
+                raise
 
             duration = time.monotonic() - start_time
             raw_output = client.get_full_text()

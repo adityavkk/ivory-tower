@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,11 @@ from ivory_tower.acp_client import (
     PathTraversalError,
     PermissionDeniedError,
 )
+
+
+def _run(coro):
+    """Run an async ACP client method in sync tests."""
+    return asyncio.run(coro)
 
 
 # ---------------------------------------------------------------------------
@@ -80,13 +86,13 @@ class TestTextAccumulation:
 
     def test_accumulate_text_chunk(self, client):
         """Text content from AgentMessageChunk is accumulated."""
-        client.session_update(session_id="s1", update=self._text_chunk("Hello "))
+        _run(client.session_update(session_id="s1", update=self._text_chunk("Hello ")))
         assert client.accumulated_text == ["Hello "]
 
     def test_accumulate_multiple_chunks(self, client):
         """Multiple chunks are accumulated in order."""
         for text in ["Hello ", "world", "!"]:
-            client.session_update(session_id="s1", update=self._text_chunk(text))
+            _run(client.session_update(session_id="s1", update=self._text_chunk(text)))
         assert client.accumulated_text == ["Hello ", "world", "!"]
         assert client.get_full_text() == "Hello world!"
 
@@ -98,7 +104,7 @@ class TestTextAccumulation:
             session_update="agent_message_chunk",
             content=ImageContentBlock(type="image", data="base64data", mime_type="image/png"),
         )
-        client.session_update(session_id="s1", update=chunk)
+        _run(client.session_update(session_id="s1", update=chunk))
         assert client.accumulated_text == []
 
     def test_non_message_updates_ignored(self, client):
@@ -110,7 +116,7 @@ class TestTextAccumulation:
             tool_call_id="tc1",
             title="readTextFile",
         )
-        client.session_update(session_id="s1", update=update)
+        _run(client.session_update(session_id="s1", update=update))
         assert client.accumulated_text == []
 
     def test_streaming_callback_called(self, sandbox):
@@ -127,12 +133,12 @@ class TestTextAccumulation:
             on_chunk=on_chunk,
         )
 
-        client.session_update(session_id="s1", update=self._text_chunk("Hello"))
+        _run(client.session_update(session_id="s1", update=self._text_chunk("Hello")))
         assert chunks_received == [("test-agent", "Hello")]
 
     def test_reset_text(self, client):
         """reset_text() clears accumulated text."""
-        client.session_update(session_id="s1", update=self._text_chunk("Hello"))
+        _run(client.session_update(session_id="s1", update=self._text_chunk("Hello")))
         client.reset_text()
         assert client.accumulated_text == []
         assert client.get_full_text() == ""
@@ -149,7 +155,7 @@ class TestReadTextFile:
     def test_read_file_in_workspace(self, client, sandbox):
         """Reading a file inside the workspace succeeds."""
         (sandbox.workspace_dir / "notes.md").write_text("my notes")
-        result = client.read_text_file(path="notes.md", session_id="s1")
+        result = _run(client.read_text_file(path="notes.md", session_id="s1"))
         assert result.content == "my notes"
 
     def test_read_nested_file(self, client, sandbox):
@@ -157,24 +163,24 @@ class TestReadTextFile:
         sub = sandbox.workspace_dir / "sub" / "dir"
         sub.mkdir(parents=True)
         (sub / "deep.txt").write_text("deep content")
-        result = client.read_text_file(path="sub/dir/deep.txt", session_id="s1")
+        result = _run(client.read_text_file(path="sub/dir/deep.txt", session_id="s1"))
         assert result.content == "deep content"
 
     def test_path_traversal_rejected(self, client):
         """Paths with .. that escape workspace are rejected."""
         with pytest.raises(PathTraversalError):
-            client.read_text_file(path="../../../etc/passwd", session_id="s1")
+            _run(client.read_text_file(path="../../../etc/passwd", session_id="s1"))
 
     def test_absolute_path_outside_workspace_rejected(self, client):
         """Absolute paths outside workspace are rejected."""
         with pytest.raises(PathTraversalError):
-            client.read_text_file(path="/etc/passwd", session_id="s1")
+            _run(client.read_text_file(path="/etc/passwd", session_id="s1"))
 
     def test_absolute_path_inside_workspace_ok(self, client, sandbox):
         """Absolute paths inside the workspace are allowed."""
         (sandbox.workspace_dir / "ok.txt").write_text("allowed")
         abs_path = str(sandbox.workspace_dir / "ok.txt")
-        result = client.read_text_file(path=abs_path, session_id="s1")
+        result = _run(client.read_text_file(path=abs_path, session_id="s1"))
         assert result.content == "allowed"
 
 
@@ -188,43 +194,43 @@ class TestWriteTextFile:
 
     def test_write_file_in_workspace(self, client, sandbox):
         """Writing a file inside the workspace succeeds."""
-        client.write_text_file(
+        _run(client.write_text_file(
             path="output.md",
             content="report text",
             session_id="s1",
-        )
+        ))
         sandbox.write_file.assert_called_once_with("output.md", "report text")
 
     def test_write_nested_file(self, client, sandbox):
         """Writing a nested path creates intermediate dirs."""
-        client.write_text_file(
+        _run(client.write_text_file(
             path="reports/final.md",
             content="final report",
             session_id="s1",
-        )
+        ))
         sandbox.write_file.assert_called_once_with("reports/final.md", "final report")
 
     def test_write_path_traversal_rejected(self, client):
         """Path traversal on writes is rejected."""
         with pytest.raises(PathTraversalError):
-            client.write_text_file(
+            _run(client.write_text_file(
                 path="../../evil.sh",
                 content="malicious",
                 session_id="s1",
-            )
+            ))
 
     def test_write_tracks_files(self, client, sandbox):
         """Written file paths are tracked."""
-        client.write_text_file(
+        _run(client.write_text_file(
             path="a.md",
             content="aaa",
             session_id="s1",
-        )
-        client.write_text_file(
+        ))
+        _run(client.write_text_file(
             path="b.md",
             content="bbb",
             session_id="s1",
-        )
+        ))
         assert client.written_files == ["a.md", "b.md"]
 
 
@@ -241,11 +247,11 @@ class TestCreateTerminal:
         sandbox.execute.return_value = MagicMock(
             exit_code=0, stdout="output", stderr=""
         )
-        result = client.create_terminal(
+        result = _run(client.create_terminal(
             command="python",
             session_id="s1",
             args=["-c", "print('hi')"],
-        )
+        ))
         assert result.terminal_id is not None
         sandbox.execute.assert_called_once()
         # Verify the command list
@@ -270,13 +276,13 @@ class TestPermissionPolicies:
         )
         from acp.interfaces import PermissionOption, ToolCallUpdate
 
-        result = client.request_permission(
+        result = _run(client.request_permission(
             options=[
                 PermissionOption(option_id="yes", kind="allow_once", name="Allow"),
             ],
             session_id="s1",
             tool_call=ToolCallUpdate(tool_call_id="tc1"),
-        )
+        ))
         assert result.outcome.option_id == "yes"
         assert result.outcome.outcome == "selected"
 
@@ -289,7 +295,7 @@ class TestPermissionPolicies:
         )
         from acp.interfaces import PermissionOption, ToolCallUpdate
 
-        result = client.request_permission(
+        result = _run(client.request_permission(
             options=[
                 PermissionOption(option_id="yes", kind="allow_once", name="Read file"),
             ],
@@ -298,7 +304,7 @@ class TestPermissionPolicies:
                 tool_call_id="tc1",
                 title="readTextFile",
             ),
-        )
+        ))
         assert result.outcome.option_id == "yes"
 
     def test_reject_all(self, sandbox):
@@ -310,13 +316,13 @@ class TestPermissionPolicies:
         )
         from acp.interfaces import PermissionOption, ToolCallUpdate
 
-        result = client.request_permission(
+        result = _run(client.request_permission(
             options=[
                 PermissionOption(option_id="yes", kind="allow_once", name="Allow"),
             ],
             session_id="s1",
             tool_call=ToolCallUpdate(tool_call_id="tc1"),
-        )
+        ))
         assert result.outcome.outcome == "cancelled"
 
 
@@ -337,7 +343,7 @@ class TestIsolationModes:
         )
         # Peer paths should be blocked
         with pytest.raises(PermissionDeniedError):
-            client.read_text_file(path="peers/codex-report.md", session_id="s1")
+            _run(client.read_text_file(path="peers/codex-report.md", session_id="s1"))
 
     def test_read_peers_allows_peer_reads(self, sandbox):
         """In read-peers mode, reading peer reports is allowed."""
@@ -348,7 +354,7 @@ class TestIsolationModes:
         )
         (sandbox.workspace_dir / "peers").mkdir()
         (sandbox.workspace_dir / "peers" / "codex-report.md").write_text("peer report")
-        result = client.read_text_file(path="peers/codex-report.md", session_id="s1")
+        result = _run(client.read_text_file(path="peers/codex-report.md", session_id="s1"))
         assert result.content == "peer report"
 
     def test_read_blackboard_allows_reads(self, sandbox):
@@ -360,7 +366,7 @@ class TestIsolationModes:
         )
         (sandbox.workspace_dir / "blackboard").mkdir()
         (sandbox.workspace_dir / "blackboard" / "transcript.md").write_text("bb content")
-        result = client.read_text_file(path="blackboard/transcript.md", session_id="s1")
+        result = _run(client.read_text_file(path="blackboard/transcript.md", session_id="s1"))
         assert result.content == "bb content"
 
     def test_read_blackboard_blocks_writes(self, sandbox):
@@ -371,11 +377,11 @@ class TestIsolationModes:
             permissions="auto-approve",
         )
         with pytest.raises(PermissionDeniedError):
-            client.write_text_file(
+            _run(client.write_text_file(
                 path="blackboard/transcript.md",
                 content="overwrite",
                 session_id="s1",
-            )
+            ))
 
     def test_none_isolation_allows_everything(self, sandbox):
         """No isolation allows all reads and writes."""
@@ -385,5 +391,5 @@ class TestIsolationModes:
             permissions="auto-approve",
         )
         (sandbox.workspace_dir / "anything.txt").write_text("free")
-        result = client.read_text_file(path="anything.txt", session_id="s1")
+        result = _run(client.read_text_file(path="anything.txt", session_id="s1"))
         assert result.content == "free"
