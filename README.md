@@ -182,6 +182,45 @@ ivory profiles                    List agent profiles
 ivory audit    RUN_DIR [AGENT]    Query sandbox audit trail
 ```
 
+### Recovery and Checkpoints
+
+Runs are resumable from `manifest.json` state. Recovery is phase-oriented (not
+round-oriented).
+
+```bash
+# inspect current phase state
+ivory status research/<run-id>
+
+# resume from the first incomplete phase
+ivory resume research/<run-id> -v
+```
+
+How resume works:
+
+- If a phase is `complete`, resume skips it.
+- If a phase is `pending`/`running`/`failed`, resume re-runs that phase from
+  the phase start.
+- For adversarial runs, this means optimization resumes at the phase level. If
+  Phase 2 is incomplete, GEPA optimization is re-run for both seeds from their
+  saved Phase 1 seed reports.
+
+Common recovery flow after timeout/interruption:
+
+1. Run `ivory status <run-dir>`.
+2. Run `ivory resume <run-dir> -v`.
+3. Verify `phase3/final-report.md` exists.
+
+Notes:
+
+- Resume is safe to retry; if an invocation fails transiently, run the same
+  `ivory resume` command again.
+- When using `--sandbox local`, isolation is directory-based plus ACP path
+  checks. It is not OS-level jail isolation. For stronger containment, use
+  `--sandbox agentfs` or `--sandbox daytona`.
+- Some ACP agents may emit `external_directory` permission requests during
+  tool use. These should not block successful completion when resume is retried,
+  but they can produce noisy logs.
+
 ### Options
 
 | Flag | Short | Description |
