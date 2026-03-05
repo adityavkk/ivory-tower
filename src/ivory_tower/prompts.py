@@ -29,6 +29,9 @@ Write a comprehensive, standalone research report structured as follows:
 Write in depth. Each section should be substantive, not just bullet points. Support claims
 with evidence and cite sources inline. This report should be useful as a standalone
 reference document on the topic.
+
+Critical output rule: include the complete report directly in your final response. Do not
+only provide notes, a summary, or a statement that the report was written to a file.
 {custom_instructions}"""
 
 _REFINEMENT_TEMPLATE = """\
@@ -86,6 +89,8 @@ Write your report with this structure:
 - Incorporate the BEST insights from all sources but maintain your own analytical voice
 - Your report should be substantially richer and more accurate than your original --
    if the peer reports didn't add anything, you aren't reading them critically enough
+- Include the full refined report directly in your final response (do not only summarize
+   or claim it was written to a file)
 
 ## Topic
 {topic_content}
@@ -140,7 +145,8 @@ Write the final report with this structure:
    phases, timing)
 
 Be thorough and write in depth. This is the final deliverable -- it should be the
-definitive reference document on this topic."""
+definitive reference document on this topic. Include the complete final report directly
+in your response (do not only summarize or claim it was written to a file)."""
 
 
 _JUDGING_TEMPLATE = """\

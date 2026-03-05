@@ -23,6 +23,7 @@ class TestBuildResearchPrompt:
         assert "## Methodology" in result
         assert "primary sources" in result
         assert "## Output Requirements" in result
+        assert "Critical output rule" in result
 
     def test_research_prompt_with_instructions(self):
         """Custom instructions appear in Additional Instructions section."""
